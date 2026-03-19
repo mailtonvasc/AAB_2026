@@ -32,7 +32,7 @@ AAB_data <- AAB_data %>%
   )
 
 ### Age
-#### Children
+#### Children (missing = 6)
 str(AAB_data$age_at_assessment)
 summary(AAB_data$age_at_assessment, useNA = "always") # checked against the age calculated from proforma's dob and doa
 
@@ -144,57 +144,6 @@ AAB_data <- AAB_data %>%
     )
   )
 
-#### Recover missing children age from other questionnaires
-AAB_data <- AAB_data %>%
-  mutate(
-    ados_dob_d      = ymd(ados_dob),
-    ados_doe_d      = ymd(ados_doe),
-    vabs_testdate_d = ymd(vabs_testdate),
-    
-    age_at_assessment_clean = case_when(
-      !is.na(age_at_assessment_clean) ~ age_at_assessment_clean,
-      # First fallback: ADOS dates
-      !is.na(ados_dob_d) & !is.na(ados_doe_d) ~
-        as.numeric(interval(ados_dob_d, ados_doe_d) / years(1)),
-      # Second fallback: ADOS DOB + Vineland test date
-      !is.na(ados_dob_d) & !is.na(vabs_testdate_d) ~
-        as.numeric(interval(ados_dob_d, vabs_testdate_d) / years(1)),
-      TRUE ~ NA_real_
-    )
-  )
-
-#### Another round of recover of missing children age from other questionnaires
-AAB_data <- AAB_data %>%
-  mutate(
-    ados_dob_d             = ymd(ados_dob),
-    ados_doe_d             = ymd(ados_doe),
-    vabs_testdate_d        = ymd(vabs_testdate),
-    acl_childsample_date_d = ymd(acl_childsample_date),
-    vabs_dob_d             = ymd(vabs_dob),
-    
-    age_at_assessment_clean = case_when(
-      !is.na(age_at_assessment_clean) ~ age_at_assessment_clean,
-      !is.na(ados_dob_d) & !is.na(ados_doe_d) ~
-        as.numeric(interval(ados_dob_d, ados_doe_d) / years(1)),
-      !is.na(ados_dob_d) & !is.na(vabs_testdate_d) ~
-        as.numeric(interval(ados_dob_d, vabs_testdate_d) / years(1)),
-      !is.na(vabs_dob_d) & !is.na(acl_childsample_date_d) ~
-        as.numeric(interval(vabs_dob_d, acl_childsample_date_d) / years(1)),
-      !is.na(vabs_dob_d) & !is.na(vabs_testdate_d) ~
-        as.numeric(interval(vabs_dob_d, vabs_testdate_d) / years(1)),
-      TRUE ~ NA_real_
-    )
-  )
-
-#### Update age variable after recovery 1
-AAB_data <- AAB_data %>%
-  mutate(
-    age = case_when(
-      participant_type %in% c(1, 2, 3, 4) ~ age_at_assessment_clean,
-      participant_type %in% c(5, 6)        ~ age_parent
-    )
-  )
-
 # Final check across all groups
 AAB_data %>%
   group_by(participant_type) %>%
@@ -208,7 +157,7 @@ AAB_data %>%
     sd        = sd(age, na.rm = TRUE)
   )
 
-### Sex
+### Sex 
 AAB_data %>%
     group_by(participant_type) %>%
     count(proforma_sex)
