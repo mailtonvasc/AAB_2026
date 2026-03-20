@@ -1,0 +1,172 @@
+# AAB Data Cleaning Pipeline
+**Project:** Sleep Disruption as an Endophenotype of Autism (FamilySleeps)  
+**Author:** Mailton Vasconcelos  
+**Institution:** Maynooth University  
+**Data source:** Australian Autism Biobank (AAB) — Access Request 2024-047  
+**Data dictionary version:** 2025-05-14  
+**Script:** `Get-vars-new_20260316v01.R`  
+**Last updated:** 2026-01-28
+
+---
+
+### Overview
+
+This pipeline cleans and prepares the AAB dataset for the FamilySleeps endophenotype analysis. It starts from the raw REDCap export and produces a cleaned dataset (`AAB_data`) with derived variables ready for analysis. A safe copy of the raw data (`AAB_safe_copy`) is preserved throughout.
+
+---
+
+## Retrieve and clean demographic variables
+### Age recovery (children)
+
+Age was computed from date pairs in the following priority order:
+
+1. `proforma_dob` + `proforma_doa`
+2. `ados_dob` + `ados_doe`
+3. `ados_dob` + `vabs_testdate`
+4. `vabs_dob` + `acl_childsample_date`
+5. `vabs_dob` + `vabs_testdate`
+6. `acl_child_dob` + `acl_proforma_date`
+7. `acl_child_dob` + `acl_cog_date`
+8. `acl_child_dob` + `acl_childsample_date`
+
+**Result:** 1573/1579 children recovered (6 still missing — no date information available in any field).
+
+---
+
+### Sex recovery (children)
+
+Sex derived in priority order: `proforma_sex` → `fhq_b2` → `ados_gender` (recoded).
+
+> **Note:** `ados_gender` uses reversed coding relative to `proforma_sex` (ADOS 1=Female, ADOS 2=Male). Recoded before use.
+
+**Result:** 10 still missing across children (5 probands, 4 siblings, 1 control).
+
+---
+
+### Site
+
+No `site` variable in the raw export. Derived from participant ID prefix:
+
+| Prefix | Site |
+|--------|------|
+| 11 | WA (Telethon Kids Institute) |
+| 22 | VIC (La Trobe University) |
+| 33 | NSW (University of New South Wales) |
+| 44 | QLD (Lady Cilento Children's Hospital) |
+
+---
+
+
+---
+
+### Diagnosis variable
+
+## Diagnosis confirmation and grouping
+
+`fhq_h1` records the diagnosis type for probands and ASD-Q participants only
+(NA by design for siblings and controls).
+
+**Coding:** 1=Autism, 2=PDD-NOS, 3=Asperger's Syndrome, 4=Other, 5=999 (data entry error).
+
+Code 5 recoded to NA. Code 4 (Other) reviewed case-by-case via `fhq_h1_detail`.
+10 cases with no valid ASD diagnosis identified and recoded to NA.
+
+**ASD-Q participants (participant_type = 2, n=15):** Only 1 of 15 had a
+confirmed diagnosis. All 15 excluded from `diagnosis_group` and retained
+in dataset with NA. Excluded from main analysis; may be considered in
+sensitivity analyses.
+
+## Retrieve and clean sleep outcome variables (CSHQ)
+
+CSHQ scores computed from `fhq_h16_a` through `fhq_h16_ah` (34 items).
+Items coded 999 recoded to NA. Six positively-worded items reverse-scored
+(new variables with `_r` suffix created, originals preserved).
+
+**Reverse-scored items:** `fhq_h16_a`, `fhq_h16_b`, `fhq_h16_g`, `fhq_h16_i`,
+`fhq_h16_j`, `fhq_h16_aa` (recoded as 4 - x, so 1→3, 2→2, 3→1).
+
+**Subscales (8):** Bedtime Resistance (6 items), Sleep Onset Delay (1 item),
+Sleep Duration (3 items), Sleep Anxiety (4 items), Night Wakings (3 items),
+Parasomnias (7 items), Sleep-Disordered Breathing (3 items),
+Daytime Sleepiness (8 items).
+
+**Total score:** 33 unique items summed directly (not sum of subscales).
+`fhq_h16_l` (Afraid of sleeping alone) excluded from total — duplicate of
+`fhq_h16_f` in Bedtime Resistance per Owens et al. (2000).
+`fhq_h16_d` (Needs parent in room) appears in both Bedtime Resistance and
+Sleep Anxiety subscales but counted once in total score.
+
+### Missingness
+
+Missingness is consistent across sites (27–35% for probands) and is not
+explained by FHQ completion status alone — 226 participants had FHQ completed
+but CSHQ still missing, suggesting the sleep section was sometimes skipped.
+
+Of the 241 partially completed questionnaires:
+- 213 missing ≤ 3 items → prorated
+- 28 missing > 3 items → retained as NA
+- 284 missing all 33 items → genuinely no data
+
+Missing items are distributed randomly across all 33 items with no systematic
+pattern. `fhq_h16_q` (bed wetting) and `fhq_h16_m` (trouble sleeping away
+from home) are the most commonly skipped single items, likely left blank when
+not applicable.
+
+### Prorating
+
+`cshq_total_prorated` computed for cases missing ≤ 3 items:
+```r
+prorated_score = observed_sum * (33 / n_items_present)
+```
+
+Use `cshq_total_prorated` as the primary outcome variable in all analyses.
+`cshq_total` (unprorated) retained for sensitivity analysis.
+
+
+> **Note:** The `sleep_` prefixed variables were generated for the paper
+> "Clinical and behavioral attributes leading to sleep disorders in children
+> on the autism spectrum" led by Dr Anne Masi. Any publications using these
+> variables must acknowledge the original authors.
+> Contact: Professor Valsamma Eapen (v.eapen@unsw.edu.au).
+
+**Reference:** Owens, J. A., Spirito, A., & McGuinn, M. (2000). The Children's
+Sleep Habits Questionnaire (CSHQ): Psychometric properties of a survey
+instrument for school-aged children. *Sleep, 23*(8), 1–9.
+https://doi.org/10.1093/sleep/23.8.1d
+
+---
+
+## Dependencies
+
+```r
+library(tidyr)
+library(dplyr)
+library(lubridate)
+library(stringr)
+library(readxl)
+library(visdat)
+```
+
+---
+
+## Notes for collaborators
+
+- Always start from the raw CSV — do not overwrite it.
+- `AAB_safe_copy` preserves the raw data within the session.
+- All intermediate variables are removed at the end of each cleaning block.
+
+## A note on language
+
+This report uses identity-first language (e.g. "autistic individuals") and
+avoids pathologising framing in line with preferences expressed by the autistic
+community and our Patient and Public Involvement (PPI) contributors.
+
+The comparison group is referred to as **"Comparison"** rather than
+"typically developing", "neurotypical", or "controls" — terms that imply
+a normative standard against which autistic people are measured.
+
+Where clinical or diagnostic terminology is required (e.g. DSM-5 criteria,
+ADOS-2 scores), it is used precisely and with context.
+
+This language policy applies to all outputs from the FamilySleeps project
+including reports, presentations and publications.
