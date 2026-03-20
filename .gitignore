@@ -1,0 +1,11 @@
+# Data files — never push these
+*.csv
+*.xlsx
+*.xls
+*.sav
+*.dta
+*.rds
+*.RData
+data/
+raw_data/
+.Rproj.user

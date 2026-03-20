@@ -1,0 +1,87 @@
+---
+title: "Analysis-report_20260128v01"
+author: "Mailton Vasconcelos"
+date: "2026-01-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Step 1a
+
+## Purpose of Step 1a
+
+This step focuses on identifying and describing sleep traits (CSHQ total and subscales) as candidate endophenotypes for autism research in the AAB dataset. The analysis will include probands, siblings and comparison participants.
+
+## Planned content for step 1a
+
+### Locate variables in the AAB dataset and clean them
+I've located the variables under the "fhq_h16_x" variables. I cross checked items and subscales with Owens, Spirito & McGuinn, 2020. Variables were recoded and specific items reversed for scoring process. As per original publication, only 33 items were included in the CHSQ total score variable as two items appear in more than one subscale or are asked repeatedly, impeding the sole sum of subscales as total score.
+
+
+### Run descriptive summaries
+Initial sample size was calculated as 2887 rows in the dataset.
+Per participant, there are:
+
+participant_type    n        prop
+1            ASD-Q   15 0.005195705
+2       Comparison  149 0.051610669
+3           Father  298 0.103221337
+4           Mother  431 0.149289920
+5          Proband 1154 0.399722896
+6          Sibling  261 0.090405265
+7             <NA>  579 0.200554209
+
+Obs.: This needs update after leaving only complete variables.
+
+Means, SDs, histograms, normality checks (Shapiro-Wilk test or visual QQ plots).
+
+### Check missingness patterns and how to handle
+
+## Notes
+The fields prefixed by 'sleep_' were data generated for the paper "clinical and behavioral attributes leading to sleep disorders in children on the autism spectrum" led by Dr Anne Masi. Use of this data should acknowledge the original authors of this work in an acknowledgement statement in any publications, theses or other work. Contact Professor Valsamma Eapen v.eapen@unsw.edu.au for further information about this data.
+
+## References
+Owens, J. A., Spirito, A., & McGuinn, M. (2000). The Children’s Sleep Habits Questionnaire (CSHQ): Psychometric Properties of A Survey Instrument for School-Aged Children. Sleep, 23(8), 1–9. https://doi.org/10.1093/sleep/23.8.1d
+
+## Including code outputs
+
+```{r name of the code chunk}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

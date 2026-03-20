@@ -1,0 +1,206 @@
+---
+title: "Sleep Disruption as an Endophenotype of Autism: Analysis Report"
+author: "Mailton Vasconcelos"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    number_sections: true
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+
+# Source cleaning pipeline
+source("AAB_cleaning_pipeline.R")
+```
+
+# Sample Description
+
+## Participant characteristics
+<!-- Table 1: N by participant type, age (mean/SD), sex, site -->
+
+## Missingness summary
+<!-- Overall missingness on key variables by participant group -->
+
+---
+
+# Block 1: Endophenotype Testing
+
+## Step 1a: Candidate Endophenotypes — Sleep Traits (CSHQ)
+
+### Descriptive statistics
+<!-- CSHQ total and subscale means, SDs, range by participant group -->
+
+### Distribution checks
+<!-- Histograms, QQ plots, Shapiro-Wilk normality tests -->
+
+### Missingness on sleep variables
+<!-- % missing by participant type; pattern analysis -->
+
+## Step 1b: Missing Data and Power Analysis
+
+### Missingness patterns
+<!-- MAR/MCAR assessment; missingness by group and variable -->
+
+### Multiple imputation
+<!-- mice() imputation — methods, m, iterations -->
+
+### Power analysis
+<!-- Simulation or analytical power per endophenotype criterion -->
+
+## Step 2: Association with Autism Diagnosis
+
+### Model 1 — Demographics only
+<!-- lmer: CSHQ ~ diagnosis_group + sex + age + site + (1|family_id) -->
+
+### Model 2 — Biological covariates added
+<!-- Adds tanner, melatonin_use, SES -->
+
+### Model 3 — Full model
+<!-- Adds vabs_int_raw, vabs_ext_raw, vabs_comp_standard -->
+
+### Proband severity model
+<!-- lmer: CSHQ ~ ados2_comparisonscore + covariates + (1|family_id) -->
+
+### Summary
+<!-- Effect sizes, confidence intervals, ICC -->
+
+## Step 3: Heritability Estimation
+
+### Variance components model
+<!-- Narrow-sense h² from pedigree-based kinship matrix -->
+<!-- Tools: SOLAR or R gap package -->
+
+### Results
+<!-- h² estimates with SE and 95% CI per CSHQ subscale -->
+
+## Step 4: Genetic Correlation Analysis
+
+### Co-segregation analysis
+<!-- Genetic correlation between sleep traits and autism liability -->
+<!-- Tools: SOLAR-Eclipse or R heritability/gap packages -->
+
+### Results
+<!-- Genetic vs environmental decomposition of phenotypic correlation -->
+
+## Step 5: Intermediate Expression in Relatives
+
+### Comparison: unaffected relatives vs controls
+<!-- Mixed models: sleep traits in siblings vs controls -->
+
+### Results
+<!-- Do siblings show intermediate trait expression? -->
+
+## Step 6: Genetic Mediation Analysis
+
+### Mendelian Randomisation
+<!-- IVW, MR-Egger, Weighted Median -->
+<!-- Tools: TwoSampleMR, MendelianRandomization -->
+
+### Pleiotropy tests
+<!-- MR-Egger intercept; sensitivity analyses -->
+
+### Results
+<!-- Causal vs pleiotropic pathways -->
+
+---
+
+# Block 2: Latent Dimensions and Prioritisation
+
+## Step 7: Latent Structure Analysis
+
+### Factor analysis
+<!-- ML factor analysis on CSHQ subscales; varimax rotation -->
+<!-- Parallel analysis for factor number -->
+
+### Results
+<!-- Factor loadings, variance explained, factor interpretation -->
+
+## Step 8a: Endophenotype Ranking (ERV)
+
+### ERV calculation
+<!-- Endophenotype Ranking Variable per sleep trait -->
+<!-- Bootstrap stability -->
+
+### Results
+<!-- Ranked table of CSHQ subscales by ERV -->
+
+## Step 8b: Endophenotype Quality Index (EQI)
+
+### EQI scoring
+<!-- Liu & Gershon 2024 framework — 12 criteria -->
+<!-- Reliability, precision, throughput, cost, generalisability -->
+
+### Combined ERV + EQI ranking
+<!-- Composite prioritisation table -->
+
+---
+
+# Block 3: Multi-Dimensional Integration
+
+## Step 9: Structural Equation Modelling
+
+### Model specification
+<!-- Latent sleep factors + PGS + environmental variables + autism severity -->
+
+### Results
+<!-- Path coefficients, model fit indices -->
+
+### Bayesian network modelling
+<!-- If applicable -->
+
+---
+
+# Block 4: Secondary Analyses
+
+## Step 10: Secondary Endophenotypes
+
+### Cognition
+<!-- Same pipeline applied to cognitive variables -->
+
+### Sensory profiles
+<!-- Same pipeline applied to SSP -->
+
+### Comparative ranking
+<!-- Sleep vs cognition vs sensory as endophenotypes -->
+
+---
+
+# Summary and Conclusions
+
+## Key findings per endophenotype criterion
+<!-- Table summarising evidence across Steps 2–6 -->
+
+## Limitations
+<!-- Chronotype absent, cross-sectional, instrument differences, etc. -->
+
+## Implications for endophenotype status of sleep disruption
+
+---
+
+# Supplementary Materials
+
+## Sensitivity analyses
+## Imputation diagnostics
+## Full model outputs
+## EQI scoring sheets
+
+---
+
+# References
+
+---
+
+# Session Information
+```{r session-info}
+sessionInfo()
+```
