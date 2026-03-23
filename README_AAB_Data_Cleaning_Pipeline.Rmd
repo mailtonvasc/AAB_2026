@@ -136,6 +136,37 @@ https://doi.org/10.1093/sleep/23.8.1d
 
 ---
 
+## Family ID derivation
+
+No family identifier or pedigree variable was present in the raw export.
+Family clusters were derived from `acl_mother_id` and `acl_father_id`
+recorded against each child, using the mother ID as the primary family
+anchor (higher completeness), with father ID as fallback in single-father
+families. Fathers in two-parent families inherited the mother anchor.
+Comparison children received unique singleton family IDs to allow
+participation in mixed-effects models without spurious clustering.
+
+Unenrolled parents are - apparently - a design feature of the AAB — approximately 52%
+of recorded mother IDs and 63% of recorded father IDs have no
+corresponding participant row in the dataset. Their IDs serve as family
+anchors regardless of enrolment status and do not affect linkage.
+
+**Unlinked participants.** 107 participants (105 probands, 2 siblings)
+could not be assigned a family ID because no parent ID was recorded at
+all (`acl_mother_id` and `acl_father_id` both absent). This is distinct
+from unenrolled parents — here the linkage field itself is empty. 104 of
+105 unlinked probands are from the WA site, suggesting a data entry
+omission at that collection site.
+
+> **Action required:** Contact AAB data team to (1) clarify whether
+> parent IDs exist in REDCap for the 107 WA participants with no linkage
+> fields recorded, (2) request `participant_twin` and
+> `participant_multiplex` variables, (3) request a pre-existing
+> family/pedigree ID for validation, and (4) request cognitive assessment
+> data (WISC, Mullen, WASI scores).
+
+---
+
 ## Dependencies
 
 ```r

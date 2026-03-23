@@ -465,14 +465,11 @@ AAB_data <- AAB_data %>%
     n_items_missing = 33 - n_items_present,
     
     cshq_total_prorated = case_when(
-      # Already complete
-      !is.na(cshq_total) ~ cshq_total,
-      # Prorate if <= 3 items missing
-      n_items_missing > 0 & n_items_missing <= 3 ~
+      !is.na(cshq_total) ~ cshq_total, # catches the ones already complete
+      n_items_missing > 0 & n_items_missing <= 3 ~ # Prorate if <= 3 items missing
         round(rowSums(across(all_of(cshq_total_items)), na.rm = TRUE) * 
-                (33 / n_items_present), 1),
-      # Too many missing — keep NA
-      TRUE ~ NA_real_
+                (33 / n_items_present), 1), # More than 3 missing — keep NA
+      TRUE ~ NA_real_ # If nothing from above is fulfilled, than NA
     )
   )
 
@@ -509,3 +506,157 @@ rm(cshq_reverse_items, cshq_vars, cshq_total_items_33)
 
 
 
+
+
+# ---- Family ID derivation
+# Strategy: resolve family clusters from probands outward using
+# acl_mother_id / acl_father_id (linking children → parents) and
+# participant_multiplex_1:5 (linking probands → ASD siblings).
+# Controls are unrelated — they receive singleton family IDs.
+
+## Step 1: Gather child id and parent linkage from probands and ASD-Q and siblings
+# (these are the rows that carry acl_mother_id / acl_father_id)
+child_parent_links <- AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3)) %>%   # Proband, ASD-Q, Sibling
+  select(id, acl_mother_id, acl_father_id) %>%
+  filter(!is.na(acl_mother_id) | !is.na(acl_father_id))
+
+## Step 2: Build an anchor key — one row per family — using the
+# mother ID as the primary family anchor (most reliably present),
+# falling back to father ID when mother is absent.
+family_anchors <- child_parent_links %>%
+  mutate(
+    family_anchor = case_when(
+      !is.na(acl_mother_id) ~ as.character(acl_mother_id),
+      !is.na(acl_father_id) ~ as.character(acl_father_id),
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(family_anchor)) %>%
+  select(id, family_anchor)
+
+## Step 3: Map every participant to its family anchor
+# Children: look up their own anchor
+child_family_map <- family_anchors %>%
+  rename(participant_id = id)
+
+# Parents: their own ID is the anchor when it appears as mother/father
+mother_map <- child_parent_links %>%
+  filter(!is.na(acl_mother_id)) %>%
+  distinct(acl_mother_id) %>%
+  mutate(
+    participant_id = as.character(acl_mother_id),
+    family_anchor  = as.character(acl_mother_id)
+  ) %>%
+  select(participant_id, family_anchor)
+
+father_map <- child_parent_links %>%
+  filter(!is.na(acl_father_id)) %>%
+  group_by(acl_father_id) %>%
+  filter(all(is.na(acl_mother_id))) %>%   # no mother ID exists for this father across any child row
+  ungroup() %>%
+  distinct(acl_father_id) %>%
+  mutate(
+    participant_id = as.character(acl_father_id),
+    family_anchor  = as.character(acl_father_id)
+  ) %>%
+  select(participant_id, family_anchor)
+
+# Fathers in two-parent families: inherit the mother anchor
+father_in_complete_family <- child_parent_links %>%
+  filter(!is.na(acl_mother_id), !is.na(acl_father_id)) %>%
+  distinct(acl_mother_id, acl_father_id) %>%
+  mutate(
+    participant_id = as.character(acl_father_id),
+    family_anchor  = as.character(acl_mother_id)
+  ) %>%
+  select(participant_id, family_anchor)
+
+## Step 4: Stack all maps and deduplicate
+all_family_map <- bind_rows(
+  child_family_map %>% mutate(participant_id = as.character(participant_id)),
+  mother_map,
+  father_map,
+  father_in_complete_family
+) %>%
+  distinct(participant_id, .keep_all = TRUE)
+
+## Step 5: Convert family anchor to an integer family_id (cleaner for modelling)
+anchor_to_fid <- all_family_map %>%
+  distinct(family_anchor) %>%
+  arrange(family_anchor) %>%
+  mutate(family_id = row_number())
+
+all_family_map <- all_family_map %>%
+  left_join(anchor_to_fid, by = "family_anchor")
+
+## Step 6: Join back to the main dataset
+AAB_data <- AAB_data %>%
+  left_join(
+    all_family_map %>% 
+      select(participant_id, family_id) %>%
+      mutate(participant_id = as.integer(participant_id)),
+    by = c("id" = "participant_id")
+  )
+
+## Step 7: Assign singleton family IDs to Comparison children (unrelated)
+# They need a family_id for mixed-effects models but must not cluster
+max_fid <- max(AAB_data$family_id, na.rm = TRUE) #calculate how many IDs were already attributed
+
+AAB_data <- AAB_data %>%
+  mutate(
+    family_id = case_when(
+      participant_type == 4 & is.na(family_id) ~
+        max_fid + row_number(),   # unique ID per comparison child
+      TRUE ~ family_id # Catch-all fallback — equivalent to the else in an if-else chain
+    )
+  )
+
+## Approximate multiplex families: families with more than one proband or ASD-Q for sensitivity analyses
+multiplex_approx <- AAB_data %>%
+  filter(participant_type %in% c(1, 2)) %>%
+  count(family_id, name = "n_asd_children") %>%
+  mutate(multiplex_approx = n_asd_children > 1)
+
+AAB_data <- AAB_data %>%
+  left_join(multiplex_approx, by = "family_id")
+
+## Flag participants with no parent IDs recorded — excluded from pedigree-based analyses
+AAB_data <- AAB_data %>%
+  mutate(
+    pedigree_linked = case_when(
+      participant_type %in% c(1, 2, 3) & is.na(acl_mother_id) & is.na(acl_father_id) ~ FALSE,
+      participant_type %in% c(1, 2, 3) ~ TRUE,
+      TRUE ~ NA
+    )
+  )
+
+## Clean up intermediate objects
+rm(child_parent_links, family_anchors, child_family_map,
+   mother_map, father_map, father_in_complete_family,
+   all_family_map, anchor_to_fid, max_fid, multiplex_approx)
+
+## Verification
+AAB_data %>%
+  group_by(participant_type_f) %>%
+  summarise(
+    n             = n(),
+    n_with_fid    = sum(!is.na(family_id)),
+    n_missing_fid = sum(is.na(family_id)),
+    n_families    = n_distinct(family_id, na.rm = TRUE)
+  )
+
+# Generate list of parent IDs to request from AAB
+missing_parent_ids <- AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3), is.na(family_id)) %>%
+  select(id, acl_mother_id, acl_father_id) %>%
+  pivot_longer(cols = c(acl_mother_id, acl_father_id),
+               names_to = "parent_type",
+               values_to = "parent_id") %>%
+  filter(!is.na(parent_id)) %>%
+  distinct(parent_id) %>%
+  arrange(parent_id)
+
+# Count and inspect
+nrow(missing_parent_ids)
+print(missing_parent_ids)
