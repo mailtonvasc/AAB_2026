@@ -500,15 +500,7 @@ AAB_data <- AAB_data %>%
   select(-n_items_present, -n_items_missing)
 rm(cshq_reverse_items, cshq_vars, cshq_total_items_33)
 
-
-
-
-
-
-
-
-
-# ---- Family ID derivation
+# ---- Family ID derivation ----
 # Strategy: resolve family clusters from probands outward using
 # acl_mother_id / acl_father_id (linking children → parents) and
 # participant_multiplex_1:5 (linking probands → ASD siblings).
@@ -646,7 +638,7 @@ AAB_data %>%
     n_families    = n_distinct(family_id, na.rm = TRUE)
   )
 
-# Generate list of parent IDs to request from AAB
+# Generate list of parent IDs to request from AAB data team
 missing_parent_ids <- AAB_data %>%
   filter(participant_type %in% c(1, 2, 3), is.na(family_id)) %>%
   select(id, acl_mother_id, acl_father_id) %>%
@@ -660,3 +652,264 @@ missing_parent_ids <- AAB_data %>%
 # Count and inspect
 nrow(missing_parent_ids)
 print(missing_parent_ids)
+
+# ---- Retrieve and clean melatonin use variables ----
+# Source: fhq_section_h — "Prescribed Medications" (fhq_h13_[a-f]) and
+#         "Natural Therapies" (fhq_h14_[a-f])
+# Strategy: scan all free-text name fields across both sections for any
+# mention of melatonin, then derive summary flags and ancillary variables.
+
+### Identify ways that melatonin and other formulations were written
+#### Select all medication-name columns (h13 & h14, a–f)
+get_unique_meds <- function(df, pattern = "^fhq_h1[34]_[a-f]_name$") {
+  cols <- names(df)[grepl(pattern, names(df))]
+  lapply(df[cols], unique)
+}
+
+med_uniques <- get_unique_meds(AAB_data)
+names(med_uniques)
+
+#### Collapse all into one long vector + get uniques
+all_unique_meds <- AAB_data[med_name_cols] |>
+  unlist(use.names = FALSE) |>
+  as.character() |>
+  trimws() |>
+  unique()
+
+#### Inspect (print)
+old <- getOption("max.print")
+options(max.print = 999999)
+all_unique_meds
+
+#### Helper: Detect melatonin mentions in a character vector (case-insensitive)
+is_melatonin <- function(x) {
+  grepl(
+    paste(
+      "melat",          # melatonin, melatonon, melaton…, malatonin, melatorin, melatronin
+      "melot",          # melotonin
+      "mellot",         # mellotonin
+      "circadi",        # Circadin, circadian (melatonin)
+      "cirdadi",        # Cirdadin
+      "melatone",       # Melatone (brand-like)
+      "sleep.?tone",    # Sleep-tone, Sleeptone
+      sep = "|"
+    ),
+    x, ignore.case = TRUE, perl = TRUE
+  )
+}
+
+#### Helper: clean free-text age-at-first-use field
+## Rejects calendar years (>= 1900), negatives, implausible ages (> 30)
+clean_age_field <- function(x) {
+  x_num <- suppressWarnings(as.numeric(x))
+  case_when(
+    is.na(x_num)  ~ NA_real_,
+    x_num >= 1900 ~ NA_real_,
+    x_num < 0     ~ NA_real_,
+    x_num > 30    ~ NA_real_,
+    TRUE          ~ x_num
+  )
+}
+
+### Step 1: Build long-format medication table (prescribed (h13) + natural (h14))
+
+## Prescribed medications (fhq_h13) — slots a–f
+prescribed_slots <- letters[1:6]
+
+prescribed_long <- purrr::map_dfr(prescribed_slots, function(slot) {
+  name_col    <- paste0("fhq_h13_", slot, "_name")
+  age_col     <- paste0("fhq_h13_", slot, "_age")
+  dur_col     <- paste0("fhq_h13_", slot, "_duration")
+  current_col <- paste0("fhq_h13_", slot, "_current")
+  reason_col  <- paste0("fhq_h13_", slot, "_reason")
+  improve_col <- paste0("fhq_h13_", slot, "_improve")
+  
+  # Only proceed if the column exists in the dataset
+  if (!name_col %in% names(AAB_data)) return(NULL)
+  
+  AAB_data %>%
+    select(id,
+           med_name    = all_of(name_col),
+           med_age     = all_of(age_col),
+           med_dur     = all_of(dur_col),
+           med_current = all_of(current_col),
+           med_reason  = all_of(reason_col),
+           med_improve = all_of(improve_col)) %>%
+    mutate(slot        = slot,
+           med_section = "prescribed")
+}) %>%
+  filter(!is.na(med_name), str_trim(med_name) != "")
+
+## Natural therapies (fhq_h14) — slots a–f
+## Each slot has: _name, _age, _reason, _improve  (no _duration or _current)
+natural_long <- purrr::map_dfr(prescribed_slots, function(slot) {
+  name_col    <- paste0("fhq_h14_", slot, "_name")
+  age_col     <- paste0("fhq_h14_", slot, "_age")
+  reason_col  <- paste0("fhq_h14_", slot, "_reason")
+  improve_col <- paste0("fhq_h14_", slot, "_improve")
+  
+  if (!name_col %in% names(AAB_data)) return(NULL)
+  
+  AAB_data %>%
+    select(id,
+           med_name    = all_of(name_col),
+           med_age     = all_of(age_col),
+           med_reason  = all_of(reason_col),
+           med_improve = all_of(improve_col)) %>%
+    mutate(slot        = slot,
+           med_section = "natural",
+           med_dur     = NA_character_,
+           med_current = NA_real_)
+}) %>%
+  filter(!is.na(med_name), str_trim(med_name) != "")
+
+## Also scan fhq_h13_other (free-text notes field) for any melatonin mentions
+other_mentions <- AAB_data %>%
+  filter(!is.na(fhq_h13_other),
+         is_melatonin(fhq_h13_other)) %>%
+  select(id, med_name = fhq_h13_other) %>%
+  mutate(slot        = "other",
+         med_section = "prescribed_other",
+         med_age     = NA_character_,
+         med_dur     = NA_character_,
+         med_current = NA_real_,
+         med_reason  = NA_character_,
+         med_improve = NA_real_)
+
+## Combine all sections
+all_meds_long <- bind_rows(prescribed_long, natural_long, other_mentions)
+
+#### Step 2: Flag melatonin rows
+
+all_meds_long <- all_meds_long %>%
+  mutate(is_mel = is_melatonin(med_name))
+
+# Quick check: what did we capture?
+all_meds_long %>%
+  filter(is_mel) %>%
+  count(med_section, med_name) %>%
+  arrange(desc(n))
+
+#### Step 3: Derive participant-level melatonin summary variables
+
+melatonin_summary <- all_meds_long %>%
+  group_by(id) %>%
+  summarise(
+    # Binary: ever mentioned melatonin in any medication slot
+    melatonin_ever = any(is_mel, na.rm = TRUE),
+    
+    # Current use: 1 = Yes, 3 = Only when needed (both count as current)
+    # med_current coding: 1 = Yes | 2 = No | 3 = Only when needed | 999 = missing
+    melatonin_current = any(
+      is_mel & med_current %in% c(1, 3),
+      na.rm = TRUE
+    ),
+    
+    # Age at first use — take the minimum across all matching slots
+    # (free-text field; convert to numeric, coerce invalid strings to NA)
+    melatonin_age_first = suppressWarnings(
+      min(clean_age_field(med_age[is_mel]), na.rm = TRUE)
+    ),
+    
+    # Duration string — concatenate non-missing durations (free-text)
+    melatonin_duration_raw = paste(
+      na.omit(med_dur[is_mel & !is.na(med_dur)]),
+      collapse = "; "
+    ),
+    
+    # Perceived improvement: 1 = No | 2 = Yes | 999 = missing
+    melatonin_improved = case_when(
+      any(is_mel & med_improve == 2, na.rm = TRUE) ~ 1L,  # at least one "Yes"
+      any(is_mel & med_improve == 1, na.rm = TRUE) ~ 0L,  # at least one "No"
+      TRUE                                          ~ NA_integer_
+    ),
+    
+    # Source section (prescribed / natural / both)
+    melatonin_source = case_when(
+      any(is_mel & med_section == "prescribed", na.rm = TRUE) &
+        any(is_mel & med_section == "natural",    na.rm = TRUE) ~ "both",
+      any(is_mel & med_section == "prescribed", na.rm = TRUE)   ~ "prescribed",
+      any(is_mel & med_section == "natural",    na.rm = TRUE)   ~ "natural",
+      TRUE                                                       ~ NA_character_
+    ),
+    
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # Recode Inf (from min() on all-NA) back to NA
+    melatonin_age_first    = if_else(is.infinite(melatonin_age_first),
+                                     NA_real_, melatonin_age_first),
+    # Empty string to NA for duration
+    melatonin_duration_raw = if_else(melatonin_duration_raw == "",
+                                     NA_character_, melatonin_duration_raw),
+    # Convert logicals to integer flags (0/1)
+    melatonin_ever    = as.integer(melatonin_ever),
+    melatonin_current = as.integer(melatonin_current),
+    # Factor labels
+    melatonin_current_f = factor(melatonin_current,
+                                 levels = c(0, 1),
+                                 labels = c("No", "Yes"))
+  )
+
+# Some participants (n = 3) typed their full medication history into a single name field
+# rather than using separate slots — melatonin_ever is valid for these participants
+# but melatonin_age_first, melatonin_current, and melatonin_duration_raw are not
+
+multi_entry_ids <- all_meds_long %>%
+  filter(is_mel, str_count(med_name, "[,;]") >= 2) %>%
+  pull(id) %>%
+  unique()
+
+#### Step 4: Join back to main dataset
+AAB_data <- AAB_data %>%
+  left_join(melatonin_summary, by = "id") %>%
+  mutate(
+    # Participants with no melatonin row default to 0/No
+    melatonin_ever    = replace_na(melatonin_ever, 0L),
+    melatonin_current = replace_na(melatonin_current, 0L),
+    melatonin_current_f = factor(melatonin_current,
+                                 levels = c(0, 1),
+                                 labels = c("No", "Yes")),
+    melatonin_entry_concat = as.integer(id %in% multi_entry_ids)
+  )
+
+#### Step 5: Verification 
+##### Counts by participant type and melatonin use status
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  group_by(participant_type_f, melatonin_ever, melatonin_current) %>%
+  count() %>%
+  print(n = 50)
+
+##### Age at first use distribution among users
+AAB_data %>%
+  filter(melatonin_ever == 1) %>%
+  summarise(
+    n         = n(),
+    n_age     = sum(!is.na(melatonin_age_first)),
+    min_age   = min(melatonin_age_first, na.rm = TRUE),
+    max_age   = max(melatonin_age_first, na.rm = TRUE),
+    mean_age  = mean(melatonin_age_first, na.rm = TRUE),
+    sd_age    = sd(melatonin_age_first, na.rm = TRUE)
+  )
+
+## Cross-tabulate melatonin use with diagnosis group (children only)
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4), !is.na(diagnosis_group)) %>%
+  count(diagnosis_group, melatonin_ever) %>%
+  pivot_wider(names_from = melatonin_ever, values_from = n,
+              names_prefix = "mel_ever_")
+
+## Clean up intermediate objects
+rm(prescribed_long, natural_long, other_mentions, all_meds_long, melatonin_summary,
+   prescribed_slots, is_melatonin)
+
+## Concatenated entry flag
+AAB_data %>%
+  filter(melatonin_entry_concat == 1) %>%
+  count(participant_type_f, melatonin_current)
+
+### Clean up intermediate objects
+rm(prescribed_long, natural_long, other_mentions, all_meds_long,
+   melatonin_summary, prescribed_slots, multi_entry_ids,
+   is_melatonin, clean_age_field)

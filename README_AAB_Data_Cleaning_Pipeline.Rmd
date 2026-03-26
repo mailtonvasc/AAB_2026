@@ -61,7 +61,7 @@ No `site` variable in the raw export. Derived from participant ID prefix:
 
 ### Diagnosis variable
 
-## Diagnosis confirmation and grouping
+### Diagnosis confirmation and grouping
 
 `fhq_h1` records the diagnosis type for probands and ASD-Q participants only
 (NA by design for siblings and controls).
@@ -164,6 +164,12 @@ omission at that collection site.
 > `participant_multiplex` variables, (3) request a pre-existing
 > family/pedigree ID for validation, and (4) request cognitive assessment
 > data (WISC, Mullen, WASI scores).
+
+---
+
+## Melatonin use variables
+
+Melatonin use was derived by scanning all free-text medication name fields across the "Prescribed Medications" (`fhq_h13_[a–f]`) and "Natural Therapies" (`fhq_h14_[a–f]`) sections of the FHQ, plus the catch-all notes field (`fhq_h13_other`). A regex helper flagged melatonin mentions across common spellings, typos, and brand names (e.g., Circadin, Melatone). Eight participant-level variables were derived: a binary ever-use flag (`melatonin_ever`), current or PRN use (`melatonin_current`), age at first use (`melatonin_age_first`), raw duration string (`melatonin_duration_raw`), perceived improvement (`melatonin_improved`), medication source section (`melatonin_source`), and a flag for participants whose melatonin detection came from a concatenated free-text entry (`melatonin_entry_concat`). Participants flagged as `melatonin_entry_concat` have reliable `melatonin_ever` status but unreliable ancillary fields and should be excluded from analyses using age, duration, or current-use variables. Age at first use required cleaning to remove calendar years (e.g., "2017") and implausible values (> 30 years) erroneously entered in the free-text field.
 
 ---
 
