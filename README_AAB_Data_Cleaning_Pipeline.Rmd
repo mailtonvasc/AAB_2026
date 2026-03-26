@@ -173,6 +173,29 @@ Melatonin use was derived by scanning all free-text medication name fields acros
 
 ---
 
+## Pubertal staging (Tanner genital score)
+
+Pubertal status was assessed via clinician-administered Tanner staging
+(`tanner` form). Following Emmanuel & Bokor (2022) and Yap et al. (2023),
+who used the same variable in the AAB, **genital/breast development was
+used as the sole domain** (`tanner_boy_genital` for males,
+`tanner_girl_genital` for females). A single unified variable (`tanner_genital`) was derived across all child
+participants (types 1–4). An ordered factor (`tanner_genital_f`, Stages 1–5) was also
+created for use in ordinal models.
+
+**Sex concordance check.** One participant (ID 1131608, potentially a female sibling)
+had `tanner_sex = 1` (Boys) recorded and only boy-scale items completed.
+Because genital and breast development cannot be mapped across sexes,
+`tanner_genital` was set to NA for this participant. Chromosomal sex
+verification via PLINK is planned.
+
+
+**References:**  
+Emmanuel M, Bokor BR. Tanner Stages. [Updated 2022 Dec 11]. In: StatPearls [Internet]. Treasure Island (FL): StatPearls Publishing; 2026 Jan-. Available from: https://www.ncbi.nlm.nih.gov/books/NBK470280/?report=classic  
+Yap, C.X., Henders, A.K., Alvares, G.A. et al. Interactions between the lipidome and genetic and environmental factors in autism. Nat Med 29, 936–949 (2023). https://doi.org/10.1038/s41591-023-02271-1
+
+---
+
 ## Dependencies
 
 ```r

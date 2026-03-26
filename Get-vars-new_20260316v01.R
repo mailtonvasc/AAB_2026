@@ -661,19 +661,24 @@ print(missing_parent_ids)
 
 ### Identify ways that melatonin and other formulations were written
 #### Select all medication-name columns (h13 & h14, a–f)
-get_unique_meds <- function(df, pattern = "^fhq_h1[34]_[a-f]_name$") {
-  cols <- names(df)[grepl(pattern, names(df))]
-  lapply(df[cols], unique)
+get_unique_meds <- function(df, pattern = "^fhq_h1[34]_[a-f]_name$") { # the function gets a dataframe and a regex pattern
+  # The pattern itself: ^fhq_h1[34]_[a-f]_name$
+    #^ and $ anchor to the full column name (no partial matches)
+    #[34] matches either 3 or 4 — so both fhq_h13 and fhq_h14
+    #[a-f] matches any slot letter a through f
+  cols <- names(df)[grepl(pattern, names(df))] # grepl() returns a logical vector for every column name that matches the pattern
+  lapply(df[cols], unique)  # lapply then applies unique() to each column individually
 }
 
 med_uniques <- get_unique_meds(AAB_data)
 names(med_uniques)
 
 #### Collapse all into one long vector + get uniques
-all_unique_meds <- AAB_data[med_name_cols] |>
-  unlist(use.names = FALSE) |>
-  as.character() |>
-  trimws() |>
+all_unique_meds <- AAB_data[names(get_unique_meds(AAB_data))] %>%
+  unlist( # unlist() collapses all columns into a single vector, so every medication name from every slot ends up in one flat structure
+    use.names = FALSE) %>%  # use.names = FALSE just drops the column-derived names that unlist would create
+  as.character() %>%
+  trimws() %>% # removes leading whitr spaces and trailing spaces
   unique()
 
 #### Inspect (print)
@@ -913,3 +918,223 @@ AAB_data %>%
 rm(prescribed_long, natural_long, other_mentions, all_meds_long,
    melatonin_summary, prescribed_slots, multi_entry_ids,
    is_melatonin, clean_age_field)
+
+# ---- Retrieve and clean Tanner stage variables ----
+# Source: 'tanner' form — tanner_sex, tanner_boy_genital, tanner_boy_pubichair,
+#         tanner_girl_genital, tanner_girl_pubichair
+# Admin flag: acl_tanner_completed (assessment_checklist form)
+# Supplementary: 3Di interview items q1044, q1046, q1049, q1050
+#
+# Strategy: derive a sex-unified composite Tanner stage for each child
+# participant, using the two domain ratings (genital/breast + pubic hair)
+# that are sex-specific. Flag missingness sources for sensitivity analyses.
+
+
+### Inspect completion flag
+# acl_tanner_completed: 1=Yes | 0=No | 2=N/A | 999=missing/error
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  count(acl_tanner_completed, useNA = "always")
+
+### Recode 999 to NA across all Tanner item variables
+tanner_items <- c(
+  "tanner_sex",
+  "tanner_boy_genital",
+  "tanner_boy_pubichair",
+  "tanner_girl_genital",
+  "tanner_girl_pubichair"
+)
+
+AAB_data <- AAB_data %>%
+  mutate(across(
+    all_of(tanner_items),
+    ~ ifelse(.x == 999, NA, .x)
+  ))
+
+# Also clean the completion flag
+AAB_data <- AAB_data %>%
+  mutate(
+    acl_tanner_completed = ifelse(acl_tanner_completed == 999, NA, acl_tanner_completed)
+  )
+
+### Check sex concordance between tanner_sex and sex
+# tanner_sex coding: 1 = Boys, 2 = Girls
+# sex (derived earlier): 1 = Male, 2 = Female  — same numeric coding
+# Flagging mismatches allows for manual review before computing composites.
+
+AAB_data <- AAB_data %>%
+  mutate(
+    tanner_sex_mismatch = case_when(
+      participant_type %in% c(5, 6)     ~ NA,              # parents: not applicable
+      is.na(tanner_sex)                 ~ NA,              # no tanner sex recorded
+      is.na(as.integer(sex))            ~ NA,              # no derived sex
+      tanner_sex != as.integer(sex)     ~ TRUE,
+      TRUE                              ~ FALSE
+    )
+  )
+
+# Inspect mismatches (there's 1 case that can be solved with PLINK later)
+AAB_data %>%
+  filter(tanner_sex_mismatch == TRUE) %>%
+  select(id, participant_type_f, sex, tanner_sex)
+
+# Mismatched participant id == 1131608
+
+### Resolve effective Tanner sex for composite scoring
+# Where tanner_sex and derived sex agree, use either.
+# Where they disagree (mismatch flagged), default to derived sex
+# (proforma_sex / ados_gender hierarchy already resolved in sex variable).
+# This can be revisited for specific participants flagged above.
+
+AAB_data <- AAB_data %>%
+  mutate(
+    tanner_sex_resolved = case_when(
+      participant_type %in% c(5, 6)  ~ NA_real_,   # parents excluded
+      !is.na(tanner_sex) & tanner_sex_mismatch == FALSE ~ tanner_sex,
+      !is.na(tanner_sex) & tanner_sex_mismatch == TRUE  ~ as.numeric(sex),  # prefer derived sex on conflict
+      is.na(tanner_sex)              ~ as.numeric(sex),  # impute from derived sex when tanner_sex absent
+      TRUE                           ~ NA_real_
+    )
+  )
+
+### Extract the two sex-appropriate domain scores per participant
+# Boys:  tanner_boy_genital  (genital/penis development) + tanner_boy_pubichair
+# Girls: tanner_girl_genital (breast development)        + tanner_girl_pubichair
+# Both are rated on stages 1–5.
+
+AAB_data <- AAB_data %>%
+  mutate(
+    tanner_domain1 = case_when(
+      tanner_sex_resolved == 1 ~ tanner_boy_genital,    # boys: genital
+      tanner_sex_resolved == 2 ~ tanner_girl_genital,   # girls: breast
+      TRUE                     ~ NA_real_
+    ),
+    tanner_domain2 = case_when(
+      tanner_sex_resolved == 1 ~ tanner_boy_pubichair,  # boys: pubic hair
+      tanner_sex_resolved == 2 ~ tanner_girl_pubichair, # girls: pubic hair
+      TRUE                     ~ NA_real_
+    )
+  )
+
+# ---- Step 6: Composite Tanner stage ----
+# Standard approach: mean of the two available domain scores.
+# Requires both domains to be non-missing (na.rm = FALSE).
+# A prorated single-domain score is retained separately for sensitivity.
+
+AAB_data <- AAB_data %>%
+  mutate(
+    tanner_composite = case_when(
+      !is.na(tanner_domain1) & !is.na(tanner_domain2) ~
+        round((tanner_domain1 + tanner_domain2) / 2, 1),
+      TRUE ~ NA_real_
+    ),
+    
+    # Single-domain fallback (for sensitivity analyses only)
+    tanner_composite_1domain = case_when(
+      !is.na(tanner_domain1) & !is.na(tanner_domain2) ~  # prefer full composite
+        round((tanner_domain1 + tanner_domain2) / 2, 1),
+      !is.na(tanner_domain1) ~ as.numeric(tanner_domain1), # only domain 1 available
+      !is.na(tanner_domain2) ~ as.numeric(tanner_domain2), # only domain 2 available
+      TRUE ~ NA_real_
+    )
+  )
+
+# ---- Step 7: Ordered factor version for modelling ----
+AAB_data <- AAB_data %>%
+  mutate(
+    tanner_stage_f = factor(
+      floor(tanner_composite),   # floor to nearest integer stage for factor
+      levels = 1:5,
+      labels = c("Stage 1", "Stage 2", "Stage 3", "Stage 4", "Stage 5"),
+      ordered = TRUE
+    )
+  )
+
+# ---- Step 8: Missingness source flag ----
+# Helps distinguish: (a) assessment not done vs (b) done but data missing
+# acl_tanner_completed: 1=Yes | 0=No | 2=N/A
+
+AAB_data <- AAB_data %>%
+  mutate(
+    tanner_missing_reason = case_when(
+      participant_type %in% c(5, 6)              ~ "not_applicable",     # parents
+      !is.na(tanner_composite)                   ~ "complete",
+      acl_tanner_completed == 0                  ~ "assessment_not_done",
+      acl_tanner_completed == 2                  ~ "not_applicable_NA",  # N/A flag at checklist
+      acl_tanner_completed == 1 & is.na(tanner_composite) ~ "done_but_items_missing",
+      is.na(acl_tanner_completed)                ~ "no_checklist_record",
+      TRUE                                       ~ "unknown"
+    )
+  )
+
+# ---- Step 9: Supplementary pubertal status from 3Di interview ----
+# q1044: Clearly pre-pubertal? (0=no, 1=yes; -2=N/A, -1=To Do)
+# q1046: Body hair growth (1=not started … 4=seems completed)
+# q1049: Breasts started to grow? (1=not started … 4=seems completed)  [girls]
+# q1050: Facial hair growth (1=not started … 4=seems completed)         [boys]
+# These are observer-rated at interview, useful as cross-validation or
+# imputation source for participants missing Tanner form data.
+
+threedi_tanner_items <- c("q1044", "q1046", "q1049", "q1050")
+
+# Recode -2 (N/A) and -1 (To Do) to NA
+AAB_data <- AAB_data %>%
+  mutate(across(
+    all_of(threedi_tanner_items),
+    ~ ifelse(.x %in% c(-2, -1), NA, .x)
+  ))
+
+# Derive a 3Di pre-pubertal flag: q1044 == 1 → clearly pre-pubertal (Tanner Stage 1)
+AAB_data <- AAB_data %>%
+  mutate(
+    threedi_prepubertal = case_when(
+      q1044 == 1  ~ 1L,  # yes, clearly pre-pubertal
+      q1044 == 0  ~ 0L,  # no (some pubertal signs present)
+      TRUE        ~ NA_integer_
+    )
+  )
+
+# ---- Step 10: Verification ----
+
+## Distribution by participant type and sex
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  group_by(participant_type_f, sex) %>%
+  summarise(
+    n                  = n(),
+    n_complete         = sum(!is.na(tanner_composite)),
+    n_missing          = sum(is.na(tanner_composite)),
+    mean_stage         = mean(tanner_composite, na.rm = TRUE),
+    sd_stage           = sd(tanner_composite, na.rm = TRUE),
+    .groups            = "drop"
+  )
+
+## Missingness reason breakdown
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  count(tanner_missing_reason, useNA = "always")
+
+## Stage distribution
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  count(tanner_stage_f, useNA = "always")
+
+## Cross-check: mismatch between tanner_sex and derived sex
+AAB_data %>%
+  filter(tanner_sex_mismatch == TRUE) %>%
+  select(id, participant_type_f, sex, tanner_sex, tanner_domain1, tanner_domain2)
+
+## Concordance with 3Di pre-pubertal flag
+AAB_data %>%
+  filter(!is.na(threedi_prepubertal), !is.na(tanner_composite)) %>%
+  group_by(threedi_prepubertal) %>%
+  summarise(
+    n              = n(),
+    mean_tanner    = mean(tanner_composite, na.rm = TRUE),
+    sd_tanner      = sd(tanner_composite, na.rm = TRUE),
+    prop_stage1    = mean(tanner_composite < 1.5, na.rm = TRUE)
+  )
+
+# ---- Step 11: Remove intermediate variables ----
+AAB_data <- AAB_data %>%
+  select(-tanner_domain1, -tanner_domain2)
