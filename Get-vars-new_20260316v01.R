@@ -980,161 +980,260 @@ AAB_data %>%
 
 # Mismatched participant id == 1131608
 
-### Resolve effective Tanner sex for composite scoring
-# Where tanner_sex and derived sex agree, use either.
-# Where they disagree (mismatch flagged), default to derived sex
-# (proforma_sex / ados_gender hierarchy already resolved in sex variable).
-# This can be revisited for specific participants flagged above.
+### Tanner genital score: single unified variable
+# Rationale: genital/breast development reflects HPG axis maturation and is
+# preferred over pubic hair, which depends on the independent adrenal axis
+# (Emmanuel & Bokor, 2022; StatPearls). Consistent with Yap et al. (2023,
+# Nat Med) who used tanner_genital as the pubertal covariate in the AAB.
 
 AAB_data <- AAB_data %>%
   mutate(
-    tanner_sex_resolved = case_when(
-      participant_type %in% c(5, 6)  ~ NA_real_,   # parents excluded
-      !is.na(tanner_sex) & tanner_sex_mismatch == FALSE ~ tanner_sex,
-      !is.na(tanner_sex) & tanner_sex_mismatch == TRUE  ~ as.numeric(sex),  # prefer derived sex on conflict
-      is.na(tanner_sex)              ~ as.numeric(sex),  # impute from derived sex when tanner_sex absent
-      TRUE                           ~ NA_real_
-    )
-  )
-
-### Extract the two sex-appropriate domain scores per participant
-# Boys:  tanner_boy_genital  (genital/penis development) + tanner_boy_pubichair
-# Girls: tanner_girl_genital (breast development)        + tanner_girl_pubichair
-# Both are rated on stages 1–5.
-
-AAB_data <- AAB_data %>%
-  mutate(
-    tanner_domain1 = case_when(
-      tanner_sex_resolved == 1 ~ tanner_boy_genital,    # boys: genital
-      tanner_sex_resolved == 2 ~ tanner_girl_genital,   # girls: breast
-      TRUE                     ~ NA_real_
+    tanner_genital = case_when(
+      participant_type %in% c(5, 6)     ~ NA_real_,  # parents: not applicable
+      tanner_sex_resolved == 1          ~ as.numeric(tanner_boy_genital),   # boys: penis/testicular
+      tanner_sex_resolved == 2          ~ as.numeric(tanner_girl_genital),  # girls: breast
+      TRUE                              ~ NA_real_
     ),
-    tanner_domain2 = case_when(
-      tanner_sex_resolved == 1 ~ tanner_boy_pubichair,  # boys: pubic hair
-      tanner_sex_resolved == 2 ~ tanner_girl_pubichair, # girls: pubic hair
-      TRUE                     ~ NA_real_
-    )
-  )
-
-# ---- Step 6: Composite Tanner stage ----
-# Standard approach: mean of the two available domain scores.
-# Requires both domains to be non-missing (na.rm = FALSE).
-# A prorated single-domain score is retained separately for sensitivity.
-
-AAB_data <- AAB_data %>%
-  mutate(
-    tanner_composite = case_when(
-      !is.na(tanner_domain1) & !is.na(tanner_domain2) ~
-        round((tanner_domain1 + tanner_domain2) / 2, 1),
-      TRUE ~ NA_real_
-    ),
-    
-    # Single-domain fallback (for sensitivity analyses only)
-    tanner_composite_1domain = case_when(
-      !is.na(tanner_domain1) & !is.na(tanner_domain2) ~  # prefer full composite
-        round((tanner_domain1 + tanner_domain2) / 2, 1),
-      !is.na(tanner_domain1) ~ as.numeric(tanner_domain1), # only domain 1 available
-      !is.na(tanner_domain2) ~ as.numeric(tanner_domain2), # only domain 2 available
-      TRUE ~ NA_real_
-    )
-  )
-
-# ---- Step 7: Ordered factor version for modelling ----
-AAB_data <- AAB_data %>%
-  mutate(
-    tanner_stage_f = factor(
-      floor(tanner_composite),   # floor to nearest integer stage for factor
+    # Ordered factor version for modelling
+    tanner_genital_f = factor(
+      tanner_genital,
       levels = 1:5,
       labels = c("Stage 1", "Stage 2", "Stage 3", "Stage 4", "Stage 5"),
       ordered = TRUE
     )
   )
 
-# ---- Step 8: Missingness source flag ----
-# Helps distinguish: (a) assessment not done vs (b) done but data missing
-# acl_tanner_completed: 1=Yes | 0=No | 2=N/A
-
-AAB_data <- AAB_data %>%
-  mutate(
-    tanner_missing_reason = case_when(
-      participant_type %in% c(5, 6)              ~ "not_applicable",     # parents
-      !is.na(tanner_composite)                   ~ "complete",
-      acl_tanner_completed == 0                  ~ "assessment_not_done",
-      acl_tanner_completed == 2                  ~ "not_applicable_NA",  # N/A flag at checklist
-      acl_tanner_completed == 1 & is.na(tanner_composite) ~ "done_but_items_missing",
-      is.na(acl_tanner_completed)                ~ "no_checklist_record",
-      TRUE                                       ~ "unknown"
-    )
-  )
-
-# ---- Step 9: Supplementary pubertal status from 3Di interview ----
-# q1044: Clearly pre-pubertal? (0=no, 1=yes; -2=N/A, -1=To Do)
-# q1046: Body hair growth (1=not started … 4=seems completed)
-# q1049: Breasts started to grow? (1=not started … 4=seems completed)  [girls]
-# q1050: Facial hair growth (1=not started … 4=seems completed)         [boys]
-# These are observer-rated at interview, useful as cross-validation or
-# imputation source for participants missing Tanner form data.
-
-threedi_tanner_items <- c("q1044", "q1046", "q1049", "q1050")
-
-# Recode -2 (N/A) and -1 (To Do) to NA
-AAB_data <- AAB_data %>%
-  mutate(across(
-    all_of(threedi_tanner_items),
-    ~ ifelse(.x %in% c(-2, -1), NA, .x)
-  ))
-
-# Derive a 3Di pre-pubertal flag: q1044 == 1 → clearly pre-pubertal (Tanner Stage 1)
-AAB_data <- AAB_data %>%
-  mutate(
-    threedi_prepubertal = case_when(
-      q1044 == 1  ~ 1L,  # yes, clearly pre-pubertal
-      q1044 == 0  ~ 0L,  # no (some pubertal signs present)
-      TRUE        ~ NA_integer_
-    )
-  )
-
-# ---- Step 10: Verification ----
-
-## Distribution by participant type and sex
+# ---- Verification
 AAB_data %>%
   filter(participant_type %in% c(1, 2, 3, 4)) %>%
   group_by(participant_type_f, sex) %>%
   summarise(
-    n                  = n(),
-    n_complete         = sum(!is.na(tanner_composite)),
-    n_missing          = sum(is.na(tanner_composite)),
-    mean_stage         = mean(tanner_composite, na.rm = TRUE),
-    sd_stage           = sd(tanner_composite, na.rm = TRUE),
-    .groups            = "drop"
+    n          = n(),
+    n_complete = sum(!is.na(tanner_genital)),
+    n_missing  = sum(is.na(tanner_genital)),
+    mean       = mean(tanner_genital, na.rm = TRUE),
+    sd         = sd(tanner_genital, na.rm = TRUE),
+    .groups    = "drop"
   )
 
-## Missingness reason breakdown
 AAB_data %>%
   filter(participant_type %in% c(1, 2, 3, 4)) %>%
-  count(tanner_missing_reason, useNA = "always")
+  count(tanner_genital_f, useNA = "always")
 
-## Stage distribution
-AAB_data %>%
-  filter(participant_type %in% c(1, 2, 3, 4)) %>%
-  count(tanner_stage_f, useNA = "always")
 
-## Cross-check: mismatch between tanner_sex and derived sex
-AAB_data %>%
-  filter(tanner_sex_mismatch == TRUE) %>%
-  select(id, participant_type_f, sex, tanner_sex, tanner_domain1, tanner_domain2)
-
-## Concordance with 3Di pre-pubertal flag
-AAB_data %>%
-  filter(!is.na(threedi_prepubertal), !is.na(tanner_composite)) %>%
-  group_by(threedi_prepubertal) %>%
-  summarise(
-    n              = n(),
-    mean_tanner    = mean(tanner_composite, na.rm = TRUE),
-    sd_tanner      = sd(tanner_composite, na.rm = TRUE),
-    prop_stage1    = mean(tanner_composite < 1.5, na.rm = TRUE)
-  )
-
-# ---- Step 11: Remove intermediate variables ----
+### Create tanner_missing_reason from existing variables
 AAB_data <- AAB_data %>%
-  select(-tanner_domain1, -tanner_domain2)
+  mutate(
+    tanner_missing_reason = case_when(
+      participant_type %in% c(5, 6)                                          ~ "not_applicable",
+      !is.na(tanner_genital)                                                 ~ "complete",
+      id == 1131608                                                           ~ "sex_scale_mismatch_genital_not_mappable",
+      acl_tanner_completed == 0                                              ~ "assessment_not_done",
+      acl_tanner_completed == 2                                              ~ "not_applicable_na",
+      acl_tanner_completed == 1 & is.na(tanner_genital)                     ~ "done_but_items_missing",
+      is.na(acl_tanner_completed)                                            ~ "no_checklist_record",
+      TRUE                                                                   ~ "unknown"
+    )
+  )
+
+# Drop intermediate variables
+AAB_data <- AAB_data %>%
+  select(-age_at_assessment_clean, -age_parent,
+         -tanner_sex_mismatch, -tanner_sex_resolved)
+
+# ---- Retrieve and clean ethnicity variables ----
+# Source: fhq_sections_a_b — Biological Mother (fhq_b8) and Biological Father (fhq_b23)
+# Strategy: assign maternal ethnicity as primary proxy for child ethnicity,
+# falling back to paternal ethnicity when maternal is missing.
+# Rationale: consistent with established convention in paediatric cohort research
+# (Vedelli et al., 2024). Genomic ancestry PCs will replace self-reported
+# ethnicity in all genetic analyses.
+
+## Inspect raw variables
+AAB_data %>%
+  count(fhq_b8,  useNA = "always")   # maternal ethnicity
+AAB_data %>%
+  count(fhq_b23, useNA = "always")   # paternal ethnicity
+
+## Recode 999 as NA for both parent ethnicity fields
+AAB_data <- AAB_data %>%
+  mutate(
+    fhq_b8_clean  = if_else(fhq_b8  == 999, NA_real_, as.numeric(fhq_b8)),
+    fhq_b23_clean = if_else(fhq_b23 == 999, NA_real_, as.numeric(fhq_b23))
+  )
+
+## Derive proxy ethnicity: maternal first, paternal fallback
+# Coding: 1=Caucasian | 2=Aboriginal | 3=Asian | 4=Maori/Pacific Islander | 5=Other
+AAB_data <- AAB_data %>%
+  mutate(
+    ethnicity_source = case_when(
+      !is.na(fhq_b8_clean)  ~ "mother",   # maternal available → use it
+      !is.na(fhq_b23_clean) ~ "father",   # maternal missing, paternal available
+      TRUE                  ~ NA_character_
+    ),
+    ethnicity_raw = case_when(
+      !is.na(fhq_b8_clean)  ~ fhq_b8_clean,   # maternal first
+      !is.na(fhq_b23_clean) ~ fhq_b23_clean,  # paternal fallback
+      TRUE                  ~ NA_real_
+    ),
+    ethnicity_f = factor(
+      ethnicity_raw,
+      levels = 1:5,
+      labels = c("Caucasian", "Aboriginal", "Asian", "Maori/Pacific Islander", "Other")
+    )
+  )
+
+## Check: how many children received maternal vs paternal vs no ethnicity
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  count(ethnicity_source, useNA = "always")
+
+## Check: distribution of ethnicity by participant type
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  count(participant_type_f, ethnicity_f, useNA = "always") %>%
+  pivot_wider(names_from = ethnicity_f, values_from = n, values_fill = 0)
+
+## Flag discordant parental ethnicity (both present but different)
+# Useful for sensitivity analyses and to document in methods
+AAB_data <- AAB_data %>%
+  mutate(
+    ethnicity_discordant = case_when(
+      !is.na(fhq_b8_clean) & !is.na(fhq_b23_clean) &
+        fhq_b8_clean != fhq_b23_clean ~ TRUE,
+      !is.na(fhq_b8_clean) & !is.na(fhq_b23_clean) &
+        fhq_b8_clean == fhq_b23_clean ~ FALSE,
+      TRUE ~ NA  # one or both parents missing — cannot assess concordance
+    )
+  )
+
+## How many discordant families?
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  count(ethnicity_discordant, useNA = "always")
+
+## Remove intermediate cleaning columns
+AAB_data <- AAB_data %>%
+  select(-fhq_b8_clean, -fhq_b23_clean)
+
+## Propagate ethnicity within families
+# The FHQ is completed once per family (typically by the proband's parent).
+# Siblings and some controls therefore have NA on fhq_b8/fhq_b23 in their
+# own row. Strategy: derive ethnicity from each child's own row first;
+# if still missing, inherit from another child in the same family who has it.
+
+### Build a family-level ethnicity lookup from all available child rows
+family_ethnicity <- AAB_data %>%
+  filter(
+    participant_type %in% c(1, 2, 3, 4),
+    !is.na(family_id),
+    !is.na(ethnicity_raw)             # only rows that already have ethnicity
+  ) %>%
+  group_by(family_id) %>%
+  slice(1) %>%                        # one row per family (all members share same FHQ)
+  ungroup() %>%
+  select(
+    family_id,
+    ethnicity_raw_fam    = ethnicity_raw,
+    ethnicity_f_fam      = ethnicity_f,
+    ethnicity_source_fam = ethnicity_source,
+    ethnicity_discordant_fam = ethnicity_discordant
+  )
+
+### Join family-level ethnicity back and fill gaps
+AAB_data <- AAB_data %>%
+  left_join(family_ethnicity, by = "family_id") %>%
+  mutate(
+    # Track the resolution path
+    ethnicity_resolution = case_when(
+      !is.na(ethnicity_raw)     ~ "own_row",     # child's own FHQ had it
+      !is.na(ethnicity_raw_fam) ~ "family_propagated", # inherited from family
+      TRUE                      ~ NA_character_
+    ),
+    # Fill ethnicity variables where missing
+    ethnicity_raw         = coalesce(ethnicity_raw,     ethnicity_raw_fam),
+    ethnicity_f           = coalesce(ethnicity_f,       ethnicity_f_fam),
+    ethnicity_source      = coalesce(ethnicity_source,  ethnicity_source_fam),
+    ethnicity_discordant  = coalesce(ethnicity_discordant, ethnicity_discordant_fam)
+  ) %>%
+  select(-ethnicity_raw_fam, -ethnicity_f_fam,
+         -ethnicity_source_fam, -ethnicity_discordant_fam)
+
+### Verify recovery
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  count(ethnicity_resolution, useNA = "always")
+
+### Check final distribution by participant type
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  count(participant_type_f, ethnicity_f, useNA = "always") %>%
+  pivot_wider(names_from = ethnicity_f, values_from = n, values_fill = 0)
+
+### Clean up
+rm(family_ethnicity)
+
+## Collapse ethnicity for regression analyses
+# Rationale: Aboriginal (n≈11) and Maori/Pacific Islander (n≈14) are too
+# small for stable regression estimates. Caucasian is the clear reference
+# group. Asian (n≈116) and Other (n≈103) are retained as separate categories.
+# Aboriginal and Maori/Pacific Islander are combined into a single
+# "Indigenous/Pacific" category to preserve their distinction from the
+# generic Other category while achieving minimal cell sizes.
+#
+# A binary sensitivity variable (Caucasian vs non-Caucasian) is also
+# created for robustness checks in models where even the collapsed
+# groups are too small (e.g., subgroup analyses).
+#
+# NOTE: Collapsing Aboriginal Australians with any other group requires
+# explicit acknowledgement in methods and limitations per NHMRC guidelines
+# on research involving Aboriginal and Torres Strait Islander peoples.
+
+## Verify current counts before collapsing
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  count(ethnicity_f, useNA = "always") %>%
+  arrange(desc(n))
+
+## Collapsed variable for regression (4 levels)
+AAB_data <- AAB_data %>%
+  mutate(
+    ethnicity_collapsed = case_when(
+      ethnicity_f == "Caucasian"               ~ "Caucasian",
+      ethnicity_f == "Asian"                   ~ "Asian",
+      ethnicity_f %in% c("Aboriginal",
+                         "Maori/Pacific Islander") ~ "Indigenous/Pacific",
+      ethnicity_f == "Other"                   ~ "Other",
+      TRUE                                     ~ NA_character_
+    ),
+    ethnicity_collapsed = factor(
+      ethnicity_collapsed,
+      levels = c("Caucasian",          # reference group
+                 "Asian",
+                 "Indigenous/Pacific",
+                 "Other")
+    )
+  )
+
+## Binary sensitivity variable (Caucasian vs non-Caucasian)
+AAB_data <- AAB_data %>%
+  mutate(
+    ethnicity_binary = case_when(
+      ethnicity_f == "Caucasian" ~ "Caucasian",
+      !is.na(ethnicity_f)        ~ "Non-Caucasian",
+      TRUE                       ~ NA_character_
+    ),
+    ethnicity_binary = factor(
+      ethnicity_binary,
+      levels = c("Caucasian", "Non-Caucasian")  # Caucasian as reference
+    )
+  )
+
+## Verify final distributions
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  count(ethnicity_collapsed, useNA = "always")
+
+AAB_data %>%
+  filter(participant_type %in% c(1, 2, 3, 4)) %>%
+  count(ethnicity_binary, useNA = "always")

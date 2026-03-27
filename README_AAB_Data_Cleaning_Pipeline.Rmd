@@ -196,6 +196,36 @@ Yap, C.X., Henders, A.K., Alvares, G.A. et al. Interactions between the lipidome
 
 ---
 
+## CONSIDER: Social Responsiveness Score for Siblings and Comparison children
+
+**Genetic Correlation Analysis**
+The SRS total T score provides a continuous, norm-referenced measure of autistic trait severity in siblings and comparison children, enabling variance-component genetic correlation estimation between sleep traits and autism liability — something the binary proband diagnosis alone cannot support.
+**Intermediate Expression in Relatives**
+If siblings score intermediate on SRS total T score between probands and comparison children — alongside intermediate CSHQ scores — that convergent pattern across two independent phenotypic dimensions substantially strengthens the endophenotype case beyond what sleep data alone could show.
+
+---
+
+---
+
+## Ethnicity
+
+Ethnicity was reported by parents at enrolment via the FHQ (maternal: `fhq_b8`;
+paternal: `fhq_b23`). Maternal ethnicity was assigned as the child's proxy (Vedelli et al., 2024), with paternal ethnicity as fallback when maternal was absent (n = 18). As the FHQ is completed once per family, ethnicity was propagated
+to children with no value in their own row by inheriting from another child
+in the same family (n = 212 recovered). Lastly, 129 families (11.4%) had discordant
+parental ethnicity; these are flagged via `ethnicity_discordant` for use in
+sensitivity analyses.
+
+A 4-level factor for use as covariate in regression models was derived. Caucasian (reference), Asian, Indigenous/Pacific, Other. Aboriginal and Maori/Pacific Islander were combined into `"Indigenous/Pacific"` due to   small cell sizes (n ≈ 11 and n ≈ 14 respectively). This grouping is explicitly acknowledged as a limitation — per NHMRC guidelines, Aboriginal and Torres Strait Islander peoples should be identified separately where sample size permits.
+
+**Note:** Genomic ancestry PCs will replace self-reported ethnicity in all
+
+**References:**
+National Health and Medical Research Council (Australia). (2018). Ethical conduct in research with Aboriginal and Torres Strait Islander Peoples and communities: Guidelines for researchers and stakeholders. National Health and Medical Research Council.
+Vedelli, L., Azizi, S., & Anand, K. J. S. (2024). Race and ethnicity data in paediatric research. JAMA Pediatrics, 178(1), 6–8. https://doi.org/10.1001/jamapediatrics.2023.4745
+
+---
+
 ## Dependencies
 
 ```r
