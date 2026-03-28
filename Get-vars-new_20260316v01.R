@@ -293,6 +293,61 @@ AAB_data %>%
 
 
 
+# ---- Retrieve and clean ADOS variables ----
+# Source: 'ados' form
+## The AAB data team pre-computed a unified Calibrated Severity Score (CSS)
+# in `ados2_comparisonscore`, covering all ADOS versions and modules:
+#   ADOS-2 Modules 1–4  (ados_mod 1–4)
+#   ADOS-G Modules 1–4  (ados_mod 5–8, legacy WA files pre-2014)
+# The field is scored 1–10, consistent with the CSS scale (Gotham et al., 2009).
+
+### Derive CSS from the AAB pre-computed unified comparison score
+AAB_data <- AAB_data %>%
+  mutate(
+    ados_css = case_when(
+      ados2_comparisonscore >= 1 &
+        ados2_comparisonscore <= 10 ~ as.numeric(ados2_comparisonscore),
+      TRUE ~ NA_real_
+    )
+  )
+
+### Flag instrument version and CSS availability
+
+AAB_data <- AAB_data %>%
+  mutate(
+    ados_instrument = case_when(
+      ados_mod %in% 1:4 ~ "ADOS-2",
+      ados_mod %in% 5:8 ~ "ADOS-G",
+      TRUE              ~ NA_character_
+    ),
+    ados_version_flag = case_when(
+      !is.na(ados_css)                    ~ "ados_css",     # primary — CSS available
+      ados_mod %in% 1:8 & is.na(ados_css) ~ "ados_no_css", # administered but score absent
+      TRUE                                ~ "no_ados"       # no ADOS recorded
+    )
+  )
+
+### Verification
+AAB_data %>%
+  filter(participant_type %in% c(1, 2)) %>%
+  group_by(ados_instrument, ados_version_flag) %>%
+  summarise(
+    n             = n(),
+    n_css         = sum(!is.na(ados_css)),
+    n_missing_css = sum(is.na(ados_css)),
+    css_mean      = mean(ados_css, na.rm = TRUE),
+    css_sd        = sd(ados_css, na.rm = TRUE),
+    css_min       = min(ados_css, na.rm = TRUE),
+    css_max       = max(ados_css, na.rm = TRUE),
+    .groups       = "drop"
+  )
+
+# Site distribution of ADOS-G cases (expect WA only)
+AAB_data %>%
+  filter(participant_type %in% c(1, 2)) %>%
+  count(site, ados_instrument, useNA = "always") %>%
+  pivot_wider(names_from = ados_instrument, values_from = n, values_fill = 0)
+
 # ---- Retrieve and clean CSHQ variables ----
 
 ### Vector of all CSHQ item variables

@@ -76,6 +76,24 @@ confirmed diagnosis. All 15 excluded from `diagnosis_group` and retained
 in dataset with NA. Excluded from main analysis; may be considered in
 sensitivity analyses.
 
+### ADOS severity (CSS)
+ 
+Autism severity was derived from `ados2_comparisonscore`, a unified
+Calibrated Severity Score (1–10) pre-computed by the AAB data team across
+all ADOS versions and modules (ADOS-2 Modules 1–4 and ADOS-G Modules 1–4).
+Values outside 1–10 were set to NA.
+ 
+**Derived variables:**
+- `ados_css` — primary severity variable (1–10, NA if unavailable)
+- `ados_instrument` — "ADOS-2" / "ADOS-G" / NA
+- `ados_version_flag` — "ados_css" / "ados_no_css" / "no_ados"
+ 
+**Reference:** 
+Gotham, K., Pickles, A., & Lord, C. (2009). Standardizing
+ADOS scores for a measure of severity in autism spectrum disorders.
+Journal of Autism and Developmental Disorders, 39 (5), 693–705.
+https://doi.org/10.1007/s10803-008-0674-3
+
 ## Retrieve and clean sleep outcome variables (CSHQ)
 
 CSHQ scores computed from `fhq_h16_a` through `fhq_h16_ah` (34 items).
@@ -133,9 +151,6 @@ Use `cshq_total_prorated` as the primary outcome variable in all analyses.
 Sleep Habits Questionnaire (CSHQ): Psychometric properties of a survey
 instrument for school-aged children. *Sleep, 23*(8), 1–9.
 https://doi.org/10.1093/sleep/23.8.1d
-
----
-
 ## Family ID derivation
 
 No family identifier or pedigree variable was present in the raw export.
@@ -164,9 +179,6 @@ omission at that collection site.
 > `participant_multiplex` variables, (3) request a pre-existing
 > family/pedigree ID for validation, and (4) request cognitive assessment
 > data (WISC, Mullen, WASI scores).
-
----
-
 ## Melatonin use variables
 
 Melatonin use was derived by scanning all free-text medication name fields across the "Prescribed Medications" (`fhq_h13_[a–f]`) and "Natural Therapies" (`fhq_h14_[a–f]`) sections of the FHQ, plus the catch-all notes field (`fhq_h13_other`). A regex helper flagged melatonin mentions across common spellings, typos, and brand names (e.g., Circadin, Melatone). Eight participant-level variables were derived: a binary ever-use flag (`melatonin_ever`), current or PRN use (`melatonin_current`), age at first use (`melatonin_age_first`), raw duration string (`melatonin_duration_raw`), perceived improvement (`melatonin_improved`), medication source section (`melatonin_source`), and a flag for participants whose melatonin detection came from a concatenated free-text entry (`melatonin_entry_concat`). Participants flagged as `melatonin_entry_concat` have reliable `melatonin_ever` status but unreliable ancillary fields and should be excluded from analyses using age, duration, or current-use variables. Age at first use required cleaning to remove calendar years (e.g., "2017") and implausible values (> 30 years) erroneously entered in the free-text field.
@@ -232,6 +244,13 @@ A postcode request has been submitted to the AAB data team to enable SEIFA IRSAD
 
 **Reference:** 
 Avvisati, F. The measure of socio-economic status in PISA: a review and some suggested improvements. Large-scale Assess Educ 8, 8 (2020). https://doi.org/10.1186/s40536-020-00086-x
+
+---
+
+# Reference: Gotham, K., Pickles, A., & Lord, C. (2009). Standardizing ADOS
+# scores for a measure of severity in autism spectrum disorders. Journal of
+# Autism and Developmental Disorders, 39(5), 693–705.
+# https://doi.org/10.1007/s10803-008-0674-3
 
 ---
 
