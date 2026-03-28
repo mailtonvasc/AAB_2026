@@ -1237,3 +1237,126 @@ AAB_data %>%
 AAB_data %>%
   filter(participant_type %in% c(1, 2, 3, 4)) %>%
   count(ethnicity_binary, useNA = "always")
+
+# ---- SES variable derivation ----
+
+# Sources: fhq_b36 (income), fhq_b10 (maternal edu), fhq_b25 (paternal edu)
+# Occupation (fhq_b12, fhq_b27) deferred — requires ANZSCO coding
+# Unit: family level (derived from proband row, propagated via family_id)
+
+### Clean income
+# fhq_b36: 12-point ordinal (1 = $1–$8k, 12 = >$104k)
+# Code 13 = "prefer not to say"; 999 = missing/error → both to NA
+
+AAB_data <- AAB_data %>%
+  mutate(
+    income_raw = case_when(
+      fhq_b36 %in% c(13, 999) ~ NA_real_,
+      TRUE                    ~ as.numeric(fhq_b36)
+    )
+  )
+
+# Inspect
+AAB_data %>%
+  filter(participant_type %in% c(1, 2)) %>%
+  count(income_raw, useNA = "always") %>%
+  arrange(income_raw)
+
+### Clean education
+# fhq_b10 (mother) and fhq_b25 (father): 7-point ordinal
+# 1=<10yrs school, 2=10yrs, 3=11yrs, 4=12yrs, 5=Trade/Cert, 6=Degree, 7=Other
+# 999 → NA; code 7 (Other) → NA (too ambiguous without detail)
+
+AAB_data <- AAB_data %>%
+  mutate(
+    edu_mother = case_when(
+      fhq_b10 %in% c(7, 999) ~ NA_real_,
+      TRUE                   ~ as.numeric(fhq_b10)
+    ),
+    edu_father = case_when(
+      fhq_b25 %in% c(7, 999) ~ NA_real_,
+      TRUE                   ~ as.numeric(fhq_b25)
+    ),
+    # Take the higher of the two parents as household education level
+    # (standard in family-based studies; reflects maximum resource available to the child)
+    edu_max = pmax(edu_mother, edu_father, na.rm = TRUE)
+  )
+
+# Inspect
+AAB_data %>%
+  filter(participant_type %in% c(1, 2)) %>%
+  summarise(
+    n_mother_edu  = sum(!is.na(edu_mother)),
+    n_father_edu  = sum(!is.na(edu_father)),
+    n_edu_max     = sum(!is.na(edu_max)),
+    n_income      = sum(!is.na(income_raw))
+  )
+
+### Derive family-level SES variables from proband row
+# All SES components are reported by parent on proband/ASD-Q forms only
+# → derive once per family and propagate to siblings and parents via family_id
+
+family_ses_raw <- AAB_data %>%
+  filter(participant_type %in% c(1, 2),  # proband/ASD-Q rows carry the FHQ
+         !is.na(family_id)) %>%
+  arrange(family_id, participant_type) %>%  # type 1 (proband) first
+  group_by(family_id) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(family_id, income_raw, edu_mother, edu_father, edu_max)
+
+# Check coverage at family level
+family_ses_raw %>%
+  summarise(
+    n_families     = n(),
+    n_income       = sum(!is.na(income_raw)),
+    n_edu_max      = sum(!is.na(edu_max)),
+    n_both         = sum(!is.na(income_raw) & !is.na(edu_max)),
+    pct_income     = round(mean(!is.na(income_raw)) * 100, 1),
+    pct_edu        = round(mean(!is.na(edu_max)) * 100, 1),
+    pct_both       = round(mean(!is.na(income_raw) & !is.na(edu_max)) * 100, 1)
+  )
+
+### Build composite SES
+# Method: Equal-weight z-score average (income + edu_max)
+# Transparent, easily reported, robust to small N
+# Reference: Avvisati et al. 2020 PISA ESCS equal-weighting rationale
+
+family_ses_raw <- family_ses_raw %>%
+  mutate(
+    income_z  = as.numeric(scale(income_raw)),
+    edu_max_z = as.numeric(scale(edu_max)),
+    
+    # Composite: mean of available z-scores
+    # na.rm = FALSE → NA if ANY component missing (complete-case)
+    ses_composite_complete = rowMeans(
+      cbind(income_z, edu_max_z),
+      na.rm = FALSE
+    ),
+    
+    # Composite: mean of available z-scores allowing partial
+    # (use only when missingness <50% of components — flag for sensitivity)
+    ses_composite_partial = rowMeans(
+      cbind(income_z, edu_max_z),
+      na.rm = TRUE
+    ),
+    
+    # Flag: how many components went into the partial composite
+    ses_n_components = (!is.na(income_z)) + (!is.na(edu_max_z))
+  )
+
+# Check distribution
+family_ses_raw %>%
+  summarise(
+    n_complete = sum(!is.na(ses_composite_complete)),
+    n_partial  = sum(!is.na(ses_composite_partial)),
+    n_single   = sum(ses_n_components == 1, na.rm = TRUE),
+    mean_c     = mean(ses_composite_complete, na.rm = TRUE),
+    sd_c       = sd(ses_composite_complete, na.rm = TRUE)
+  )
+
+### Remove intermediate SES objects and variables
+rm(family_ses_raw)
+
+AAB_data <- AAB_data %>%
+  select(-edu_mother, -edu_father)

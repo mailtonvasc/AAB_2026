@@ -205,8 +205,6 @@ If siblings score intermediate on SRS total T score between probands and compari
 
 ---
 
----
-
 ## Ethnicity
 
 Ethnicity was reported by parents at enrolment via the FHQ (maternal: `fhq_b8`;
@@ -223,6 +221,17 @@ A 4-level factor for use as covariate in regression models was derived. Caucasia
 **References:**
 National Health and Medical Research Council (Australia). (2018). Ethical conduct in research with Aboriginal and Torres Strait Islander Peoples and communities: Guidelines for researchers and stakeholders. National Health and Medical Research Council.
 Vedelli, L., Azizi, S., & Anand, K. J. S. (2024). Race and ethnicity data in paediatric research. JAMA Pediatrics, 178(1), 6–8. https://doi.org/10.1001/jamapediatrics.2023.4745
+
+---
+
+## SES composite variable
+
+SES was operationalised at the family level from two FHQ components: family income (`fhq_b36`) and maximum parental education (`edu_max`, derived as `pmax(fhq_b10, fhq_b25, na.rm = TRUE)`). Both were derived from the proband row and propagated to all family members via `family_id`. The primary composite (`ses_composite_complete`) is the equal-weight mean of income_z and edu_max_z, complete cases only (n = 657, 73.5%). A partial composite (`ses_composite_partial`, n = 781, 87.4%) allowing one missing component is retained for sensitivity, with `ses_n_components` flagging contribution. Occupation (`fhq_b12`, `fhq_b27`) can be considered pending also ANZSCO coding.
+
+A postcode request has been submitted to the AAB data team to enable SEIFA IRSAD linkage, which will replace `ses_composite_complete` as the primary SES covariate once received. The ceiling limitation of the current composite should be noted when interpreting SES effects.
+
+**Reference:** 
+Avvisati, F. The measure of socio-economic status in PISA: a review and some suggested improvements. Large-scale Assess Educ 8, 8 (2020). https://doi.org/10.1186/s40536-020-00086-x
 
 ---
 
