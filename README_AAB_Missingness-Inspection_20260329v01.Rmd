@@ -1,0 +1,240 @@
+---
+title: "Missingness Inspection and Step 2 Modelling Decisions"
+author: "Mailton Vasconcelos"
+date: "2026-03-28"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    theme: flatly
+    highlight: kate
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+```
+
+---
+
+# Overview
+
+This report documents the pre-modelling missingness inspection for the FamilySleeps
+endophenotype analysis (Step 2: Association with Autism Diagnosis). The analytic
+sample comprises autistic children (ASD), non-autistic siblings (Sibling), and
+unrelated non-autistic children (Comparison) from the Australian Autism Biobank (AAB).
+All analyses use the cleaned dataset produced by `Get-vars-new_20260328v02.R`.
+
+---
+
+# 1. Analytic sample
+
+```{r sample-flow}
+tribble(
+  ~Step, ~n, ~Loss, ~Note,
+  "Participant types 1 / 3 / 4 (ASD, Sibling, Comparison)", 1564, "—", "",
+  "Confirmed diagnosis_group (excludes unconfirmed probands & ASD-Q)", 1372, "192", "Unconfirmed ASD diagnosis or ASD-Q",
+  "CSHQ total prorated available", 1211, "161", "Structural CSHQ missingness",
+  "Complete on age, sex, melatonin_ever, family_id", 1124, "87",  "Age / sex missingness in siblings and Comparison",
+  "Complete on ethnicity_collapsed (full model)", 1101, "23",  "Comparison children missing family-level ethnicity"
+) %>%
+  kable(col.names = c("Step", "n", "Loss", "Note"),
+        align = c("l","r","r","l")) %>%
+  kable_styling(bootstrap_options = c("striped","condensed"), full_width = FALSE) %>%
+  row_spec(5, bold = TRUE)
+```
+
+**Final analytic N: 1,101** (minimal model without ethnicity: n = 1,124).
+
+---
+
+# 2. Overall missingness
+
+```{r overall-miss}
+tribble(
+  ~Variable,                  ~pct_miss, ~n_missing, ~n_present,
+  "tanner_genital",               76.7,      1199,        365,
+  "ses_composite_complete",       35.7,       559,       1005,
+  "ses_composite_partial",        25.3,       396,       1168,
+  "cshq_total_prorated",          19.6,       307,       1257,
+  "diagnosis_group",              12.3,       192,       1372,
+  "ethnicity_collapsed",          11.9,       186,       1378,
+  "family_id",                     6.8,       107,       1457,
+  "sex",                           0.6,        10,       1554,
+  "age",                           0.4,         6,       1558,
+  "site",                          0.0,         0,       1564,
+  "melatonin_ever",                0.0,         0,       1564
+) %>%
+  kable(col.names = c("Variable", "% Missing", "n Missing", "n Present"),
+        align = c("l","r","r","r")) %>%
+  kable_styling(bootstrap_options = c("striped","condensed"), full_width = FALSE) %>%
+  row_spec(c(1,2,3), background = "#fff3cd")
+```
+
+Highlighted rows are variables excluded from main models (see Section 5).
+
+---
+
+# 3. Missingness by diagnosis group
+
+```{r miss-by-group}
+tribble(
+  ~Variable,                ~ASD,  ~Sibling, ~Comparison,
+  "cshq_total_prorated",    16.6,     28.4,       27.5,
+  "ethnicity_collapsed",    11.4,      4.2,       28.9,
+  "tanner_genital",         77.9,     67.8,       82.6,
+  "ses_composite_complete", 32.0,     15.7,      100.0,
+  "ses_composite_partial",  19.7,      7.7,      100.0,
+  "family_id",               9.1,      0.8,        0.0,
+  "age",                     0.2,      1.5,        0.0,
+  "sex",                     0.4,      1.5,        0.7,
+  "melatonin_ever",          0.0,      0.0,        0.0
+) %>%
+  kable(col.names = c("Variable", "ASD (%)", "Sibling (%)", "Comparison (%)"),
+        align = c("l","r","r","r")) %>%
+  kable_styling(bootstrap_options = c("striped","condensed"), full_width = FALSE)
+```
+
+Key patterns: SES is 100% missing for Comparison children (structural); Tanner missingness
+is high across all groups; CSHQ missingness is higher in Sibling and Comparison (~28%)
+than ASD (~17%), consistent with the FHQ being completed primarily for the proband.
+
+---
+
+# 4. Missingness by site
+
+```{r miss-by-site}
+tribble(
+  ~Variable,                  ~WA,   ~VIC,  ~NSW,  ~QLD,
+  "cshq_total_prorated",      16.4,  21.9,  20.8,  23.2,
+  "tanner_genital",           84.1,  84.9,  74.0,  57.3,
+  "ses_composite_complete",   42.6,  36.3,  30.1,  27.5,
+  "ses_composite_partial",    35.1,  24.3,  14.5,  18.2,
+  "family_id",                16.1,   0.8,   0.0,   0.3,
+  "pedigree_linked",          13.6,   8.4,   6.0,   6.0,
+  "ethnicity_collapsed",      11.5,  17.5,   9.0,  11.6
+) %>%
+  kable(col.names = c("Variable", "WA (%)", "VIC (%)", "NSW (%)", "QLD (%)"),
+        align = c("l","r","r","r","r")) %>%
+  kable_styling(bootstrap_options = c("striped","condensed"), full_width = FALSE) %>%
+  row_spec(c(5,6), background = "#fff3cd")
+```
+
+Highlighted rows flag the WA site data quality issue (see Decision 3 below).
+Tanner missingness is notably lower in QLD (57.3%) than other sites (~74–85%),
+suggesting a site-level protocol difference.
+
+---
+
+# 5. MAR checks — is CSHQ missingness predicted by observed variables?
+
+```{r mar-checks}
+tribble(
+  ~Test, ~Statistic, ~p, ~Interpretation,
+  "Diagnosis group (χ²)", "χ²(3) = 540.19", "< 0.001", "Driven by unconfirmed probands; resolved by diagnosis_group filter",
+  "Site (χ²)",            "χ²(3) = 7.82",   "0.050",   "Marginal; site included as covariate in all models",
+  "Sex (χ²)",             "χ²(2) = 28.45",  "< 0.001", "Males missing less; attenuates once diagnosis group is controlled",
+  "Age (t-test)",         "t(467) = 1.99",  "0.047",   "Missing children ~0.5 yrs younger; age is a model covariate",
+  "SES (t-test)",         "t(120) = 2.87",  "0.005",   "Missing children have lower SES; SES excluded from main models"
+) %>%
+  kable(col.names = c("Test", "Statistic", "p", "Interpretation"),
+        align = c("l","l","r","l")) %>%
+  kable_styling(bootstrap_options = c("striped","condensed"), full_width = FALSE)
+```
+
+CSHQ missingness is not MCAR. The data are consistent with a **Missing At Random (MAR)**
+mechanism — missingness is predicted by observed variables (diagnosis group, site, sex,
+age, SES) that are either included as covariates or removed by the analytic filter.
+Complete-case analysis is the primary approach; multiple imputation via `mice()` will
+be used as a sensitivity analysis (Step 1b).
+
+---
+
+# 6. Descriptive statistics — analytic sample
+
+```{r table1}
+tribble(
+  ~Group,       ~n,  ~Mean_age, ~SD_age, ~pct_male, ~Mean_CSHQ, ~SD_CSHQ, ~pct_mel,
+  "Comparison", 89,   5.8,       3.2,     49.4,       43.3,        7.7,      1.1,
+  "Sibling",   182,   8.1,       4.3,     48.4,       45.1,        9.1,      1.1,
+  "ASD",       830,   7.5,       3.8,     78.7,       49.8,       10.0,     14.8
+) %>%
+  kable(col.names = c("Group", "n", "Mean age", "SD", "% Male",
+                       "Mean CSHQ", "SD", "% Melatonin"),
+        align = c("l","r","r","r","r","r","r","r")) %>%
+  kable_styling(bootstrap_options = c("striped","condensed"), full_width = FALSE)
+```
+
+CSHQ scores increase in the expected direction: Comparison < Sibling < ASD,
+providing initial support for intermediate expression in relatives (Step 5).
+Melatonin use is strongly differentiated (ASD 14.8% vs 1.1% in other groups),
+confirming it as a necessary covariate. Comparison children are on average
+younger than ASD and Sibling groups (5.8 vs 7.5–8.1 years).
+
+---
+
+# 7. Modelling decisions
+
+## Decision 1 — Tanner stages excluded from main models {.decision}
+
+Tanner genital staging is missing in 76.7% of the analytic sample. The dominant
+reason is `not_applicable_na` (n = 880, assessor-marked), which is age-dependent
+and not random. Missingness is also site-patterned (57% QLD vs 84% WA/VIC).
+Including Tanner in main models would silently restrict the sample to older children
+and introduce site confounding. **Age is the sole developmental proxy in all main
+models.** Tanner will be included in a sensitivity analysis restricted to the
+Tanner-complete subset (n = 365; primarily QLD).
+
+## Decision 2 — SES excluded from main models {.decision}
+
+SES is derived from the proband FHQ row and propagated via `family_id`. Comparison
+children have singleton family IDs with no proband, so SES is 100% missing for
+that group. Including SES in the main models would exclude all Comparison children,
+eliminating the reference group. **SES (`ses_composite_partial`) will be included
+in a sensitivity analysis restricted to ASD + Sibling only**, where coverage is
+80.3% and 92.3% respectively.
+
+## Decision 3 — WA site sensitivity analysis {.decision}
+
+`family_id` and `pedigree_linked` missingness is concentrated in WA (16.1% and
+13.6% respectively), consistent with the known data entry omission of parent IDs
+at that site (104/105 unlinked probands are from WA). This affects family clustering
+in mixed-effects models and pedigree completeness for heritability analyses.
+**All main models will be re-run excluding WA** to test robustness to this data
+quality issue.
+
+---
+
+# 8. Step 2 model specification
+
+**Outcome:** `cshq_total_prorated` (primary); CSHQ subscales (secondary)
+
+**Fixed effects:**
+- `diagnosis_group` (Comparison / Sibling / ASD; Comparison as reference)
+- `age` (continuous)
+- `sex` (Male / Female)
+- `melatonin_ever` (0 / 1)
+- `ethnicity_collapsed` (Caucasian / Asian / Indigenous-Pacific / Other; Caucasian as reference)
+- `site` (WA / VIC / NSW / QLD)
+
+**Random effect:** `(1 | family_id)` — random intercept for family clustering
+
+**Analytic N:** 1,101 (full model); 1,124 (without ethnicity)
+
+**Sensitivity analyses:**
+
+| Sensitivity | Modification | Purpose |
+|---|---|---|
+| S1 | Exclude WA site | Test robustness to WA data quality |
+| S2 | ASD + Sibling only; add `ses_composite_partial` | SES effect |
+| S3 | Tanner-complete subset; replace `age` with `age + tanner_genital` | Pubertal adjustment |
+| S4 | Multiple imputation via `mice()` | MAR assumption |
+
+---
+
+*Script:* `Get-vars-new_20260328v02.R` | *Missingness inspection:* `1b_Handling-Missing-Data_20260328v01.R`

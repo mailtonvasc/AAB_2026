@@ -4,8 +4,8 @@
 **Institution:** Maynooth University  
 **Data source:** Australian Autism Biobank (AAB) — Access Request 2024-047  
 **Data dictionary version:** 2025-05-14  
-**Script:** `Get-vars-new_20260316v01.R`  
-**Last updated:** 2026-01-28
+**Script:** `Get-vars-new_20260328v02.R`  
+**Last updated:** 2026-03-28
 
 ---
 
@@ -15,7 +15,17 @@ This pipeline cleans and prepares the AAB dataset for the FamilySleeps endopheno
 
 ---
 
-## Retrieve and clean demographic variables
+## Block 1: Demographic variables
+
+### Participant type
+
+`participant_type` recoded to a labelled factor (`participant_type_f`):
+1 = Proband, 2 = ASD-Q, 3 = Sibling, 4 = Control, 5 = Mother, 6 = Father.
+
+Only rows with no `id` at all are dropped (genuine empty REDCap rows). Rows
+with a valid `id` but missing `participant_type` are retained and inspected
+before any decision is made.
+
 ### Age recovery (children)
 
 Age was computed from date pairs in the following priority order:
@@ -31,17 +41,25 @@ Age was computed from date pairs in the following priority order:
 
 **Result:** 1573/1579 children recovered (6 still missing — no date information available in any field).
 
----
+All intermediate parsed date columns and the `age_at_assessment_clean` /
+`age_parent` intermediates are dropped at the end of the age block.
+
+### Age recovery (parents)
+
+Parent age derived from `fhq_b9` (mother DOB) and `fhq_b24_dob` (father DOB),
+paired with the proforma assessment date from the child's row. A unified `age`
+variable covers all six participant types.
 
 ### Sex recovery (children)
 
 Sex derived in priority order: `proforma_sex` → `fhq_b2` → `ados_gender` (recoded).
 
-> **Note:** `ados_gender` uses reversed coding relative to `proforma_sex` (ADOS 1=Female, ADOS 2=Male). Recoded before use.
+> **Note:** `ados_gender` uses reversed coding relative to `proforma_sex`
+> (ADOS 1 = Female, ADOS 2 = Male). Recoded before use.
+
+Sex assigned deterministically for enrolled parents: Mother = Female, Father = Male.
 
 **Result:** 10 still missing across children (5 probands, 4 siblings, 1 control).
-
----
 
 ### Site
 
@@ -56,12 +74,7 @@ No `site` variable in the raw export. Derived from participant ID prefix:
 
 ---
 
-
----
-
-### Diagnosis variable
-
-### Diagnosis confirmation and grouping
+## Block 2: Diagnosis confirmation and grouping
 
 `fhq_h1` records the diagnosis type for probands and ASD-Q participants only
 (NA by design for siblings and controls).
@@ -76,32 +89,16 @@ confirmed diagnosis. All 15 excluded from `diagnosis_group` and retained
 in dataset with NA. Excluded from main analysis; may be considered in
 sensitivity analyses.
 
-### ADOS severity (CSS)
- 
-Autism severity was derived from `ados2_comparisonscore`, a unified
-Calibrated Severity Score (1–10) pre-computed by the AAB data team across
-all ADOS versions and modules (ADOS-2 Modules 1–4 and ADOS-G Modules 1–4).
-Values outside 1–10 were set to NA.
- 
-**Derived variables:**
-- `ados_css` — primary severity variable (1–10, NA if unavailable)
-- `ados_instrument` — "ADOS-2" / "ADOS-G" / NA
-- `ados_version_flag` — "ados_css" / "ados_no_css" / "no_ados"
- 
-**Reference:** 
-Gotham, K., Pickles, A., & Lord, C. (2009). Standardizing
-ADOS scores for a measure of severity in autism spectrum disorders.
-Journal of Autism and Developmental Disorders, 39 (5), 693–705.
-https://doi.org/10.1007/s10803-008-0674-3
+---
 
-## Retrieve and clean sleep outcome variables (CSHQ)
+## Block 3: CSHQ — Children's Sleep Habits Questionnaire
 
 CSHQ scores computed from `fhq_h16_a` through `fhq_h16_ah` (34 items).
 Items coded 999 recoded to NA. Six positively-worded items reverse-scored
 (new variables with `_r` suffix created, originals preserved).
 
 **Reverse-scored items:** `fhq_h16_a`, `fhq_h16_b`, `fhq_h16_g`, `fhq_h16_i`,
-`fhq_h16_j`, `fhq_h16_aa` (recoded as 4 - x, so 1→3, 2→2, 3→1).
+`fhq_h16_j`, `fhq_h16_aa` (recoded as 4 − x, so 1→3, 2→2, 3→1).
 
 **Subscales (8):** Bedtime Resistance (6 items), Sleep Onset Delay (1 item),
 Sleep Duration (3 items), Sleep Anxiety (4 items), Night Wakings (3 items),
@@ -140,7 +137,6 @@ prorated_score = observed_sum * (33 / n_items_present)
 Use `cshq_total_prorated` as the primary outcome variable in all analyses.
 `cshq_total` (unprorated) retained for sensitivity analysis.
 
-
 > **Note:** The `sleep_` prefixed variables were generated for the paper
 > "Clinical and behavioral attributes leading to sleep disorders in children
 > on the autism spectrum" led by Dr Anne Masi. Any publications using these
@@ -151,7 +147,10 @@ Use `cshq_total_prorated` as the primary outcome variable in all analyses.
 Sleep Habits Questionnaire (CSHQ): Psychometric properties of a survey
 instrument for school-aged children. *Sleep, 23*(8), 1–9.
 https://doi.org/10.1093/sleep/23.8.1d
-## Family ID derivation
+
+---
+
+## Block 4: Family ID derivation
 
 No family identifier or pedigree variable was present in the raw export.
 Family clusters were derived from `acl_mother_id` and `acl_father_id`
@@ -161,7 +160,7 @@ families. Fathers in two-parent families inherited the mother anchor.
 Comparison children received unique singleton family IDs to allow
 participation in mixed-effects models without spurious clustering.
 
-Unenrolled parents are - apparently - a design feature of the AAB — approximately 52%
+Unenrolled parents are apparently a design feature of the AAB — approximately 52%
 of recorded mother IDs and 63% of recorded father IDs have no
 corresponding participant row in the dataset. Their IDs serve as family
 anchors regardless of enrolment status and do not affect linkage.
@@ -179,78 +178,145 @@ omission at that collection site.
 > `participant_multiplex` variables, (3) request a pre-existing
 > family/pedigree ID for validation, and (4) request cognitive assessment
 > data (WISC, Mullen, WASI scores).
-## Melatonin use variables
-
-Melatonin use was derived by scanning all free-text medication name fields across the "Prescribed Medications" (`fhq_h13_[a–f]`) and "Natural Therapies" (`fhq_h14_[a–f]`) sections of the FHQ, plus the catch-all notes field (`fhq_h13_other`). A regex helper flagged melatonin mentions across common spellings, typos, and brand names (e.g., Circadin, Melatone). Eight participant-level variables were derived: a binary ever-use flag (`melatonin_ever`), current or PRN use (`melatonin_current`), age at first use (`melatonin_age_first`), raw duration string (`melatonin_duration_raw`), perceived improvement (`melatonin_improved`), medication source section (`melatonin_source`), and a flag for participants whose melatonin detection came from a concatenated free-text entry (`melatonin_entry_concat`). Participants flagged as `melatonin_entry_concat` have reliable `melatonin_ever` status but unreliable ancillary fields and should be excluded from analyses using age, duration, or current-use variables. Age at first use required cleaning to remove calendar years (e.g., "2017") and implausible values (> 30 years) erroneously entered in the free-text field.
 
 ---
 
-## Pubertal staging (Tanner genital score)
+## Block 5: Melatonin use variables
+
+Melatonin use was derived by scanning all free-text medication name fields
+across the "Prescribed Medications" (`fhq_h13_[a–f]`) and "Natural Therapies"
+(`fhq_h14_[a–f]`) sections of the FHQ, plus the catch-all notes field
+(`fhq_h13_other`). A regex helper flagged melatonin mentions across common
+spellings, typos, and brand names (e.g., Circadin, Melatone). Eight
+participant-level variables were derived: a binary ever-use flag
+(`melatonin_ever`), current or PRN use (`melatonin_current`), age at first
+use (`melatonin_age_first`), raw duration string (`melatonin_duration_raw`),
+perceived improvement (`melatonin_improved`), medication source section
+(`melatonin_source`), and a flag for participants whose melatonin detection
+came from a concatenated free-text entry (`melatonin_entry_concat`).
+Participants flagged as `melatonin_entry_concat` have reliable `melatonin_ever`
+status but unreliable ancillary fields and should be excluded from analyses
+using age, duration, or current-use variables. Age at first use required
+cleaning to remove calendar years (e.g., "2017") and implausible values
+(> 30 years) erroneously entered in the free-text field.
+
+---
+
+## Block 6: Pubertal staging (Tanner genital score)
 
 Pubertal status was assessed via clinician-administered Tanner staging
 (`tanner` form). Following Emmanuel & Bokor (2022) and Yap et al. (2023),
 who used the same variable in the AAB, **genital/breast development was
 used as the sole domain** (`tanner_boy_genital` for males,
-`tanner_girl_genital` for females). A single unified variable (`tanner_genital`) was derived across all child
-participants (types 1–4). An ordered factor (`tanner_genital_f`, Stages 1–5) was also
-created for use in ordinal models.
+`tanner_girl_genital` for females). A single unified variable (`tanner_genital`)
+was derived across all child participants (types 1–4). An ordered factor
+(`tanner_genital_f`, Stages 1–5) was also created for use in ordinal models.
 
-**Sex concordance check.** One participant (ID 1131608, potentially a female sibling)
-had `tanner_sex = 1` (Boys) recorded and only boy-scale items completed.
-Because genital and breast development cannot be mapped across sexes,
-`tanner_genital` was set to NA for this participant. Chromosomal sex
-verification via PLINK is planned.
+**Sex concordance check.** A `tanner_sex_mismatch` flag is computed first by
+comparing `tanner_sex` against the derived `sex` variable. A new intermediate
+variable `tanner_sex_resolved` is then created — using the concordant
+`tanner_sex` value where available, falling back to the derived `sex` where
+`tanner_sex` is absent, and setting NA for any mismatched case. `tanner_genital`
+is mapped from `tanner_sex_resolved`, not directly from `tanner_sex`.
 
+One participant (ID 1131608, potentially a female sibling) had `tanner_sex = 1`
+(Boys) recorded and only boy-scale items completed. Because genital and breast
+development cannot be mapped across sexes, `tanner_genital` was set to NA for
+this participant. Chromosomal sex verification via PLINK is planned.
+
+Both `tanner_sex_mismatch` and `tanner_sex_resolved` are dropped after
+`tanner_genital` is computed — they do not appear in the final dataset.
 
 **References:**  
-Emmanuel M, Bokor BR. Tanner Stages. [Updated 2022 Dec 11]. In: StatPearls [Internet]. Treasure Island (FL): StatPearls Publishing; 2026 Jan-. Available from: https://www.ncbi.nlm.nih.gov/books/NBK470280/?report=classic  
-Yap, C.X., Henders, A.K., Alvares, G.A. et al. Interactions between the lipidome and genetic and environmental factors in autism. Nat Med 29, 936–949 (2023). https://doi.org/10.1038/s41591-023-02271-1
+Emmanuel M, Bokor BR. Tanner Stages. [Updated 2022 Dec 11]. In: StatPearls
+[Internet]. Treasure Island (FL): StatPearls Publishing; 2026 Jan-.
+https://www.ncbi.nlm.nih.gov/books/NBK470280/?report=classic  
+Yap, C.X., Henders, A.K., Alvares, G.A. et al. Interactions between the
+lipidome and genetic and environmental factors in autism. Nat Med 29, 936–949
+(2023). https://doi.org/10.1038/s41591-023-02271-1
 
 ---
 
 ## CONSIDER: Social Responsiveness Score for Siblings and Comparison children
 
 **Genetic Correlation Analysis**
-The SRS total T score provides a continuous, norm-referenced measure of autistic trait severity in siblings and comparison children, enabling variance-component genetic correlation estimation between sleep traits and autism liability — something the binary proband diagnosis alone cannot support.
+The SRS total T score provides a continuous, norm-referenced measure of autistic
+trait severity in siblings and comparison children, enabling variance-component
+genetic correlation estimation between sleep traits and autism liability —
+something the binary proband diagnosis alone cannot support.
+
 **Intermediate Expression in Relatives**
-If siblings score intermediate on SRS total T score between probands and comparison children — alongside intermediate CSHQ scores — that convergent pattern across two independent phenotypic dimensions substantially strengthens the endophenotype case beyond what sleep data alone could show.
+If siblings score intermediate on SRS total T score between probands and
+comparison children — alongside intermediate CSHQ scores — that convergent
+pattern across two independent phenotypic dimensions substantially strengthens
+the endophenotype case beyond what sleep data alone could show.
 
 ---
 
-## Ethnicity
+## Block 7: Ethnicity
 
 Ethnicity was reported by parents at enrolment via the FHQ (maternal: `fhq_b8`;
-paternal: `fhq_b23`). Maternal ethnicity was assigned as the child's proxy (Vedelli et al., 2024), with paternal ethnicity as fallback when maternal was absent (n = 18). As the FHQ is completed once per family, ethnicity was propagated
-to children with no value in their own row by inheriting from another child
-in the same family (n = 212 recovered). Lastly, 129 families (11.4%) had discordant
-parental ethnicity; these are flagged via `ethnicity_discordant` for use in
-sensitivity analyses.
+paternal: `fhq_b23`). Maternal ethnicity was assigned as the child's proxy
+(Vedelli et al., 2024), with paternal ethnicity as fallback when maternal was
+absent (n = 18). As the FHQ is completed once per family, ethnicity was
+propagated to children with no value in their own row by inheriting from another
+child in the same family (n = 212 recovered). Lastly, 129 families (11.4%) had
+discordant parental ethnicity; these are flagged via `ethnicity_discordant` for
+use in sensitivity analyses.
 
-A 4-level factor for use as covariate in regression models was derived. Caucasian (reference), Asian, Indigenous/Pacific, Other. Aboriginal and Maori/Pacific Islander were combined into `"Indigenous/Pacific"` due to   small cell sizes (n ≈ 11 and n ≈ 14 respectively). This grouping is explicitly acknowledged as a limitation — per NHMRC guidelines, Aboriginal and Torres Strait Islander peoples should be identified separately where sample size permits.
+A 4-level factor for use as covariate in regression models was derived:
+Caucasian (reference), Asian, Indigenous/Pacific, Other. Aboriginal and
+Maori/Pacific Islander were combined into `"Indigenous/Pacific"` due to small
+cell sizes (n ≈ 11 and n ≈ 14 respectively). This grouping is explicitly
+acknowledged as a limitation — per NHMRC guidelines, Aboriginal and Torres
+Strait Islander peoples should be identified separately where sample size
+permits.
+
+A binary sensitivity variable (`ethnicity_binary`: Caucasian vs Non-Caucasian)
+is also retained for robustness checks in subgroup analyses.
 
 **Note:** Genomic ancestry PCs will replace self-reported ethnicity in all
+genetic analyses.
 
 **References:**
-National Health and Medical Research Council (Australia). (2018). Ethical conduct in research with Aboriginal and Torres Strait Islander Peoples and communities: Guidelines for researchers and stakeholders. National Health and Medical Research Council.
-Vedelli, L., Azizi, S., & Anand, K. J. S. (2024). Race and ethnicity data in paediatric research. JAMA Pediatrics, 178(1), 6–8. https://doi.org/10.1001/jamapediatrics.2023.4745
+National Health and Medical Research Council (Australia). (2018). Ethical
+conduct in research with Aboriginal and Torres Strait Islander Peoples and
+communities: Guidelines for researchers and stakeholders. NHMRC.  
+Vedelli, L., Azizi, S., & Anand, K. J. S. (2024). Race and ethnicity data in
+paediatric research. JAMA Pediatrics, 178(1), 6–8.
+https://doi.org/10.1001/jamapediatrics.2023.4745
 
 ---
 
-## SES composite variable
+## Block 8: SES composite variable
 
-SES was operationalised at the family level from two FHQ components: family income (`fhq_b36`) and maximum parental education (`edu_max`, derived as `pmax(fhq_b10, fhq_b25, na.rm = TRUE)`). Both were derived from the proband row and propagated to all family members via `family_id`. The primary composite (`ses_composite_complete`) is the equal-weight mean of income_z and edu_max_z, complete cases only (n = 657, 73.5%). A partial composite (`ses_composite_partial`, n = 781, 87.4%) allowing one missing component is retained for sensitivity, with `ses_n_components` flagging contribution. Occupation (`fhq_b12`, `fhq_b27`) can be considered pending also ANZSCO coding.
+SES was operationalised at the family level from two FHQ components: family
+income (`fhq_b36`) and maximum parental education (`edu_max`, derived as
+`pmax(fhq_b10, fhq_b25, na.rm = TRUE)`). Both were derived from the proband
+row and propagated to all family members via `family_id`.
 
-A postcode request has been submitted to the AAB data team to enable SEIFA IRSAD linkage, which will replace `ses_composite_complete` as the primary SES covariate once received. The ceiling limitation of the current composite should be noted when interpreting SES effects.
+The family-level lookup table (`family_ses_raw`) is built, composites computed,
+and then immediately joined back to `AAB_data` before `rm(family_ses_raw)` is
+called. The intermediate columns `edu_mother` and `edu_father` are dropped from
+`AAB_data` after the join.
 
-**Reference:** 
-Avvisati, F. The measure of socio-economic status in PISA: a review and some suggested improvements. Large-scale Assess Educ 8, 8 (2020). https://doi.org/10.1186/s40536-020-00086-x
+The primary composite (`ses_composite_complete`) is the equal-weight mean of
+`income_z` and `edu_max_z`, complete cases only. A partial composite
+(`ses_composite_partial`) allowing one missing component is retained for
+sensitivity analyses, with `ses_n_components` flagging how many components
+contributed.
 
----
+Occupation (`fhq_b12`, `fhq_b27`) can be considered pending ANZSCO coding.
 
-# Reference: Gotham, K., Pickles, A., & Lord, C. (2009). Standardizing ADOS
-# scores for a measure of severity in autism spectrum disorders. Journal of
-# Autism and Developmental Disorders, 39(5), 693–705.
-# https://doi.org/10.1007/s10803-008-0674-3
+A postcode request has been submitted to the AAB data team to enable SEIFA IRSAD
+linkage, which will replace `ses_composite_complete` as the primary SES covariate
+once received. The ceiling limitation of the current composite should be noted
+when interpreting SES effects.
+
+**Reference:**
+Avvisati, F. The measure of socio-economic status in PISA: a review and some
+suggested improvements. Large-scale Assess Educ 8, 8 (2020).
+https://doi.org/10.1186/s40536-020-00086-x
 
 ---
 
@@ -261,8 +327,8 @@ library(tidyr)
 library(dplyr)
 library(lubridate)
 library(stringr)
-library(readxl)
 library(visdat)
+library(purrr)
 ```
 
 ---
@@ -272,10 +338,11 @@ library(visdat)
 - Always start from the raw CSV — do not overwrite it.
 - `AAB_safe_copy` preserves the raw data within the session.
 - All intermediate variables are removed at the end of each cleaning block.
+- The retired script `Get-vars-new_20260316v01.R` is in `archive/` for reference only — do not use it.
 
 ## A note on language
 
-This report uses identity-first language (e.g. "autistic individuals") and
+This project uses identity-first language (e.g. "autistic individuals") and
 avoids pathologising framing in line with preferences expressed by the autistic
 community and our Patient and Public Involvement (PPI) contributors.
 
