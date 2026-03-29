@@ -102,6 +102,9 @@ miss_summary <- children_av %>%
 cat("\n=== 1. OVERALL MISSINGNESS (children, n =", nrow(children_av), ") ===\n")
 print(miss_summary, n = Inf)
 
+# Decision, since Tanner Stages is not applicable to a considerable part of the sample
+# it will not enter the models, age you be the sole proxy of development.
+
 # =============================================================================
 # 2. MISSINGNESS BY PARTICIPANT TYPE
 # =============================================================================
@@ -122,6 +125,10 @@ miss_by_type <- children_av %>%
 
 cat("\n=== 2. % MISSING BY PARTICIPANT TYPE ===\n")
 print(miss_by_type, n = Inf)
+
+# Decision: SES is 100% missing for Comparison children since SES is rerived from parents.
+# The plan now is to drop SES from the main Step 2 models entirely and run a sensitivity 
+# analysis in probands + siblings only where SES is available
 
 # =============================================================================
 # 3. MISSINGNESS BY SITE
@@ -145,6 +152,11 @@ if ("site" %in% available_vars) {
   cat("\n=== 3. % MISSING BY SITE ===\n")
   print(miss_by_site, n = Inf)
 }
+
+# Decision: The family_id and pedigree_linked missingness is concentrated in WA (16.1% and 13.6%).
+# Consistent with the known WA data entry omission for parents. WA should be a sensitivity 
+# analysis stratum. Run models with and without WA site to test whether results are
+# robust to this data quality issue.
 
 # =============================================================================
 # 4. CSHQ-SPECIFIC MISSINGNESS DETAIL
@@ -364,3 +376,5 @@ cat(sprintf("  Complete cases for Step 2 model:                n = %d (%.1f%%)\n
 cat("\n  → If CSHQ missingness is MAR (supported by section 8), proceed with:\n")
 cat("      Primary:     cshq_total_prorated (prorated complete cases)\n")
 cat("      Sensitivity: multiple imputation via mice()\n")
+
+rm(children)
